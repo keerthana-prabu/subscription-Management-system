@@ -26,6 +26,10 @@ import type {
   SubscriptionCreatePayload,
   SubscriptionStatusChangePayload,
   Invoice,
+  InvoiceCreatePayload,
+  TaxRate,
+  TaxRateCreatePayload,
+  Discount,
   Payment,
   MRRReport,
   RevenueReport,
@@ -220,6 +224,22 @@ class ApiClient {
   // Billing Endpoints (Member 3)
   billing = {
     getInvoices: (): Promise<Invoice[]> => this.request<Invoice[]>('/billing/invoices'),
+    createInvoice: (data: InvoiceCreatePayload): Promise<Invoice> =>
+      this.request<Invoice>('/billing/invoices', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    getInvoice: (id: number): Promise<Invoice> =>
+      this.request<Invoice>(`/billing/invoices/${id}`),
+    voidInvoice: (id: number): Promise<Invoice> =>
+      this.request<Invoice>(`/billing/invoices/${id}/void`, { method: 'POST' }),
+    getTaxes: (): Promise<TaxRate[]> => this.request<TaxRate[]>('/billing/taxes'),
+    createTax: (data: TaxRateCreatePayload): Promise<TaxRate> =>
+      this.request<TaxRate>('/billing/taxes', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    getDiscounts: (): Promise<Discount[]> => this.request<Discount[]>('/billing/discounts'),
   };
 
   // Payments Endpoints (Member 4)

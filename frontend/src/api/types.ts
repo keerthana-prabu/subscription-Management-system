@@ -331,23 +331,30 @@ export type DiscountType = 'percentage' | 'fixed_amount';
 export interface TaxRate {
   id: number;
   name: string;
-  rate_percentage: string;
+  rate_percentage: string | number;
   country: string;
   is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface TaxRateCreatePayload {
+  name: string;
+  rate_percentage: number;
+  country: string;
+  is_active?: boolean;
 }
 
 export interface Discount {
   id: number;
   code: string;
   discount_type: DiscountType;
-  amount: string;
+  amount: string | number;
   valid_from?: string;
   valid_until?: string;
   is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface InvoiceLineItem {
@@ -355,26 +362,53 @@ export interface InvoiceLineItem {
   invoice_id: number;
   description: string;
   quantity: number;
-  unit_price: string;
-  tax_rate_id?: number;
-  tax_amount: string;
-  subtotal: string;
-  total_amount: string;
+  unit_price: string | number;
+  tax_rate_id?: number | null;
+  tax_percentage?: number;
+  tax_amount: string | number;
+  subtotal: string | number;
+  total_amount: string | number;
+}
+
+export interface InvoiceLineItemInput {
+  description: string;
+  quantity: number;
+  unit_price: number;
+  tax_rate_id?: number | null;
+}
+
+export interface InvoiceCreatePayload {
+  customer_id: number;
+  subscription_id?: number | null;
+  currency?: string;
+  due_date: string;
+  items: InvoiceLineItemInput[];
+  discount_code?: string | null;
+  customer_name?: string;
+  customer_email?: string;
+  payment_terms?: string;
+  notes?: string;
 }
 
 export interface Invoice {
   id: number;
   invoice_number: string;
   customer_id: number;
+  customer_name?: string;
+  customer_email?: string;
   subscription_id?: number;
+  subscription_number?: string;
   status: InvoiceStatus;
   currency: string;
-  subtotal: string;
-  discount_total: string;
-  tax_total: string;
-  total_amount: string;
+  subtotal: string | number;
+  discount_total: string | number;
+  tax_total: string | number;
+  total_amount: string | number;
+  amount_paid?: string | number;
   due_date: string;
   paid_at?: string;
+  payment_terms?: string;
+  notes?: string;
   items: InvoiceLineItem[];
   created_at: string;
   updated_at: string;
