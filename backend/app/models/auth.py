@@ -33,7 +33,12 @@ class User(Base, TimestampMixin):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(
-        Enum(UserRole, name="user_role_enum", native_enum=False),
+        Enum(
+            UserRole,
+            name="user_role_enum",
+            native_enum=False,
+            values_callable=lambda x: [item.value for item in x],
+        ),
         default=UserRole.CUSTOMER,
         nullable=False,
     )
