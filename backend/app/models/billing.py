@@ -6,8 +6,8 @@ Owner: Member 3 (Subscriptions & Billing Backend)
 import enum
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import List, Optional, TYPE_CHECKING
-from sqlalchemy import String, Numeric, Integer, DateTime, Enum, ForeignKey, Boolean
+from typing import List, Optional, Any, TYPE_CHECKING
+from sqlalchemy import String, Text, Numeric, Integer, DateTime, Enum, ForeignKey, Boolean, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
@@ -65,6 +65,13 @@ class Discount(Base, TimestampMixin):
         nullable=False,
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    minimum_purchase_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"), nullable=False)
+    minimum_quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    max_uses: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    current_uses: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    applicability: Mapped[str] = mapped_column(String(32), default="all", nullable=False)  # "all", "products", "subscriptions"
+    applicable_product_ids: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    applicable_subscription_ids: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     valid_from: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     valid_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -89,6 +96,12 @@ class Invoice(Base, TimestampMixin):
         nullable=True,
         index=True,
     )
+    discount_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("discounts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    discount_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     status: Mapped[InvoiceStatus] = mapped_column(
         Enum(
             InvoiceStatus,
@@ -102,6 +115,7 @@ class Invoice(Base, TimestampMixin):
     )
     currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
     payment_terms: Mapped[str] = mapped_column(String(64), default="Net 30", nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"), nullable=False)
     discount_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"), nullable=False)
     tax_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"), nullable=False)
@@ -116,6 +130,7 @@ class Invoice(Base, TimestampMixin):
     # Relationships
     customer: Mapped["User"] = relationship("User", back_populates="invoices")
     subscription: Mapped[Optional["Subscription"]] = relationship("Subscription", back_populates="invoices")
+    discount: Mapped[Optional["Discount"]] = relationship("Discount")
     items: Mapped[List["InvoiceLineItem"]] = relationship(
         "InvoiceLineItem",
         back_populates="invoice",

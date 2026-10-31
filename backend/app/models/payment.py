@@ -43,13 +43,23 @@ class Payment(Base, TimestampMixin):
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
     status: Mapped[PaymentStatus] = mapped_column(
-        Enum(PaymentStatus, name="payment_status_enum", native_enum=False),
+        Enum(
+            PaymentStatus,
+            name="payment_status_enum",
+            native_enum=False,
+            values_callable=lambda x: [item.value for item in x],
+        ),
         default=PaymentStatus.PENDING,
         nullable=False,
         index=True,
     )
     payment_method: Mapped[PaymentMethod] = mapped_column(
-        Enum(PaymentMethod, name="payment_method_enum", native_enum=False),
+        Enum(
+            PaymentMethod,
+            name="payment_method_enum",
+            native_enum=False,
+            values_callable=lambda x: [item.value for item in x],
+        ),
         default=PaymentMethod.MANUAL,
         nullable=False,
     )
@@ -59,13 +69,15 @@ class Payment(Base, TimestampMixin):
         index=True,
         nullable=True,
     )
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     failure_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     refunded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    refund_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"), nullable=False)
+    refund_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships
     invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="payments")
 
     def __repr__(self) -> str:
-        return f"<Payment id={self.id} invoice_id={self.invoice_id} status={self.status}>"
-
+        return f"<Payment id={self.id} invoice_id={self.invoice_id} amount={self.amount} status={self.status}>"

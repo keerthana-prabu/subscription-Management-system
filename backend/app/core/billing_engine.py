@@ -2,7 +2,7 @@
 
 Implements centralized monetary arithmetic, tax calculation, discount-before-tax policy,
 billing period advancement (month-end, leap year, anniversary date handling),
-and idempotent concurrency-safe recurring billing runs.
+discount eligibility validation, and idempotent concurrency-safe recurring billing runs.
 
 Owner: Member 3 (Subscriptions & Billing Backend)
 """
@@ -13,9 +13,9 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Optional, Tuple, Dict, Any
 from dateutil.relativedelta import relativedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text
 
-from app.models.billing import Invoice, InvoiceLineItem, InvoiceStatus, TaxRate
+from app.models.billing import Invoice, InvoiceLineItem, InvoiceStatus, TaxRate, Discount, DiscountType
 from app.models.subscription import Subscription, SubscriptionStatus, BillingCycle
 
 
@@ -112,6 +112,109 @@ def calculate_invoice_financials(
     return subtotal_sum, effective_discount, tax_sum, grand_total
 
 
+def evaluate_discount_eligibility(
+    discount: Discount,
+    line_computations: List[LineItemComputation],
+    subscription_id: Optional[int] = None,
+    evaluation_time: Optional[datetime] = None,
+) -> Tuple[bool, str, Decimal]:
+    """Validate discount rules against line items and calculate eligible discount amount.
+
+    Returns:
+        (is_eligible: bool, reason: str, discount_amount: Decimal)
+    """
+    if not discount.is_active:
+        return False, f"Discount '{discount.code}' is inactive.", Decimal("0.00")
+
+    now = evaluation_time or datetime.now(timezone.utc)
+    if discount.valid_from:
+        valid_from = discount.valid_from if discount.valid_from.tzinfo else discount.valid_from.replace(tzinfo=timezone.utc)
+        if now < valid_from:
+            return False, f"Discount '{discount.code}' is not yet valid.", Decimal("0.00")
+
+    if discount.valid_until:
+        valid_until = discount.valid_until if discount.valid_until.tzinfo else discount.valid_until.replace(tzinfo=timezone.utc)
+        if now > valid_until:
+            return False, f"Discount '{discount.code}' has expired.", Decimal("0.00")
+
+    if discount.max_uses is not None and discount.current_uses >= discount.max_uses:
+        return False, f"Discount '{discount.code}' has reached its maximum allowed uses.", Decimal("0.00")
+
+    # Filter eligible items by applicability
+    eligible_items = []
+    applicability = (discount.applicability or "all").lower()
+
+    if applicability == "all":
+        eligible_items = line_computations
+    elif applicability == "products":
+        allowed_pids = set(discount.applicable_product_ids or [])
+        eligible_items = [
+            it for it in line_computations
+            if it.product_variant_id is not None and it.product_variant_id in allowed_pids
+        ]
+        if not eligible_items:
+            return False, f"Discount '{discount.code}' is only applicable to specific product variants.", Decimal("0.00")
+    elif applicability == "subscriptions":
+        allowed_sids = set(discount.applicable_subscription_ids or [])
+        if subscription_id is None or subscription_id not in allowed_sids:
+            return False, f"Discount '{discount.code}' is only applicable to specific subscriptions.", Decimal("0.00")
+        eligible_items = line_computations
+    else:
+        eligible_items = line_computations
+
+    total_eligible_qty = sum((it.quantity for it in eligible_items), 0)
+    total_eligible_subtotal = sum((it.subtotal for it in eligible_items), Decimal("0.00"))
+
+    # Check minimum quantity
+    if discount.minimum_quantity and total_eligible_qty < discount.minimum_quantity:
+        return (
+            False,
+            f"Discount '{discount.code}' requires a minimum quantity of {discount.minimum_quantity} (eligible: {total_eligible_qty}).",
+            Decimal("0.00"),
+        )
+
+    # Check minimum purchase amount
+    if discount.minimum_purchase_amount and total_eligible_subtotal < discount.minimum_purchase_amount:
+        return (
+            False,
+            f"Discount '{discount.code}' requires a minimum purchase of {discount.minimum_purchase_amount} (eligible: {total_eligible_subtotal}).",
+            Decimal("0.00"),
+        )
+
+    # Compute discount
+    if discount.discount_type == DiscountType.PERCENTAGE:
+        raw_discount = total_eligible_subtotal * (discount.amount / Decimal("100.00"))
+    else:  # FIXED_AMOUNT
+        raw_discount = discount.amount
+
+    # Never discount more than the eligible subtotal
+    calculated_discount = min(total_eligible_subtotal, quantize_money(raw_discount))
+    return True, "Eligible", calculated_discount
+
+
+def try_redeem_discount(db: Session, discount_id: int) -> bool:
+    """Atomically increment discount usage counter with concurrency-safe locking.
+
+    Prevents race conditions from exceeding max_uses.
+    """
+    stmt = (
+        text(
+            """
+            UPDATE discounts
+            SET current_uses = current_uses + 1, updated_at = NOW()
+            WHERE id = :id AND (max_uses IS NULL OR current_uses < max_uses)
+            RETURNING id
+            """
+        )
+    )
+    result = db.execute(stmt, {"id": discount_id}).fetchone()
+    if result is not None:
+        db.commit()
+        return True
+    db.rollback()
+    return False
+
+
 def generate_invoice_number() -> str:
     """Generate a unique human-readable invoice reference."""
     now = datetime.now(timezone.utc)
@@ -131,7 +234,6 @@ def advance_billing_period(
     interval = plan.billing_interval_count if plan and plan.billing_interval_count >= 1 else 1
     cycle = plan.billing_cycle if plan else BillingCycle.MONTHLY
 
-    # Base date
     dt = from_date
 
     if cycle == BillingCycle.DAILY:
@@ -139,15 +241,11 @@ def advance_billing_period(
     elif cycle == BillingCycle.WEEKLY:
         return dt + relativedelta(weeks=interval)
     elif cycle == BillingCycle.MONTHLY:
-        # Check if original subscription start_date had an anchor day (e.g. 31st)
         anchor_day = subscription.start_date.day if subscription.start_date else dt.day
-        # Advance by interval months
         next_dt = dt + relativedelta(months=interval)
-        # Try to restore anchor day if next_dt's month allows it
         try:
             return next_dt.replace(day=anchor_day)
         except ValueError:
-            # Clamps to last valid day of that month (relativedelta already does this)
             return next_dt
     elif cycle in (BillingCycle.YEARLY, BillingCycle.ANNUAL):
         anchor_day = subscription.start_date.day if subscription.start_date else dt.day
@@ -156,12 +254,10 @@ def advance_billing_period(
         try:
             return next_dt.replace(month=anchor_month, day=anchor_day)
         except ValueError:
-            # Handles Feb 29 on non-leap years
             return next_dt
     elif cycle == BillingCycle.QUARTERLY:
         return dt + relativedelta(months=3 * interval)
     else:
-        # Default monthly
         return dt + relativedelta(months=interval)
 
 
@@ -171,20 +267,12 @@ def run_recurring_billing(
     subscription_ids: Optional[List[int]] = None,
     auto_confirm: bool = False,
 ) -> Dict[str, Any]:
-    """Execute automated recurring billing run across eligible due subscriptions.
-
-    - Identifies active due subscriptions.
-    - Excludes paused, cancelled, expired, or closed subscriptions.
-    - Checks plan expiration bounds.
-    - Prevents duplicate invoice creation with database uniqueness safety.
-    - Returns execution summary with counts.
-    """
+    """Execute automated recurring billing run across eligible due subscriptions."""
     if target_date is None:
         target_date = datetime.now(timezone.utc)
     elif target_date.tzinfo is None:
         target_date = target_date.replace(tzinfo=timezone.utc)
 
-    # Query active subscriptions due on or before target_date
     query = (
         db.query(Subscription)
         .filter(
@@ -205,14 +293,12 @@ def run_recurring_billing(
     created_invoices: List[Invoice] = []
     errors: List[str] = []
 
-    # Cache active tax rates
     active_taxes = db.query(TaxRate).filter(TaxRate.is_active == True).all()  # noqa: E712
     default_tax = active_taxes[0] if active_taxes else None
 
     for sub in candidate_subscriptions:
         processed_count += 1
 
-        # Check subscription or plan expiry date
         if sub.plan and sub.plan.end_date:
             plan_end = sub.plan.end_date if sub.plan.end_date.tzinfo else sub.plan.end_date.replace(tzinfo=timezone.utc)
             if target_date >= plan_end:
@@ -222,7 +308,6 @@ def run_recurring_billing(
                 skipped_count += 1
                 continue
 
-        # Check duplicate billing for exact period
         existing_invoice = (
             db.query(Invoice)
             .filter(
@@ -233,17 +318,14 @@ def run_recurring_billing(
             .first()
         )
         if existing_invoice:
-            # Already billed for this period; advance subscription date if not advanced
             sub.current_period_start = sub.current_period_end
             sub.current_period_end = advance_billing_period(sub, sub.current_period_start)
             db.commit()
             skipped_count += 1
             continue
 
-        # Prepare line computations
         line_computations: List[LineItemComputation] = []
 
-        # 1. Base plan price line item if applicable
         if sub.plan and sub.plan.base_price > Decimal("0.00"):
             line_computations.append(
                 LineItemComputation(
@@ -256,7 +338,6 @@ def run_recurring_billing(
                 )
             )
 
-        # 2. Subscription variant line items
         for item in sub.items:
             variant_desc = f"Variant #{item.variant_id}"
             if item.variant:
@@ -272,7 +353,6 @@ def run_recurring_billing(
                 )
             )
 
-        # If no items or base price, add standard subscription line item
         if not line_computations:
             line_computations.append(
                 LineItemComputation(
@@ -285,14 +365,11 @@ def run_recurring_billing(
                 )
             )
 
-        # Calculate totals
         subtotal, discount_tot, tax_tot, grand_total = calculate_invoice_financials(line_computations)
 
-        # Create Invoice within isolated savepoint
         savepoint = db.begin_nested()
         try:
             inv_number = generate_invoice_number()
-            # Ensure number is unique
             while db.query(Invoice).filter(Invoice.invoice_number == inv_number).first():
                 inv_number = generate_invoice_number()
 
@@ -316,7 +393,6 @@ def run_recurring_billing(
             db.add(invoice)
             db.flush()
 
-            # Create line items
             for comp in line_computations:
                 db_item = InvoiceLineItem(
                     invoice_id=invoice.id,
@@ -332,7 +408,6 @@ def run_recurring_billing(
                 )
                 db.add(db_item)
 
-            # Advance subscription next billing cycle
             new_period_start = sub.current_period_end
             new_period_end = advance_billing_period(sub, new_period_start)
             sub.current_period_start = new_period_start
@@ -387,7 +462,6 @@ def get_billing_schedule_items(
 
     results = []
     for sub in subscriptions:
-        # Calculate expected recurring amount
         expected_items_total = sum((item.unit_price * item.quantity for item in sub.items), Decimal("0.00"))
         plan_base = sub.plan.base_price if sub.plan else Decimal("0.00")
         expected_total = quantize_money(expected_items_total + plan_base)
@@ -417,4 +491,3 @@ def get_billing_schedule_items(
         })
 
     return results
-

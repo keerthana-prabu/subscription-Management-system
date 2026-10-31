@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_roles
 from app.models.auth import User, UserRole
-from app.models.billing import Invoice, InvoiceLineItem, InvoiceStatus, TaxRate, Discount
+from app.models.billing import Invoice, InvoiceLineItem, InvoiceStatus, TaxRate, Discount, DiscountType
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.catalog import ProductVariant
 from app.schemas.billing import (
@@ -25,6 +25,7 @@ from app.schemas.billing import (
     TaxRateUpdateRequest,
     TaxRateResponse,
     DiscountCreateRequest,
+    DiscountUpdateRequest,
     DiscountResponse,
     BillingRunRequest,
     BillingRunResponse,
@@ -34,6 +35,8 @@ from app.core.billing_engine import (
     quantize_money,
     LineItemComputation,
     calculate_invoice_financials,
+    evaluate_discount_eligibility,
+    try_redeem_discount,
     generate_invoice_number,
     run_recurring_billing,
     get_billing_schedule_items,
@@ -222,9 +225,12 @@ def _serialize_invoice(inv: Invoice) -> InvoiceResponse:
         customer_id=inv.customer_id,
         customer=customer_summary,
         subscription_id=inv.subscription_id,
+        discount_id=inv.discount_id,
+        discount_code=inv.discount_code,
         status=status_val,
         currency=inv.currency,
         payment_terms=inv.payment_terms,
+        notes=inv.notes,
         subtotal=inv.subtotal,
         discount_total=inv.discount_total,
         tax_total=inv.tax_total,
@@ -327,7 +333,7 @@ def create_invoice(
     payload: InvoiceCreateRequest,
     db: Session = Depends(get_db),
 ) -> InvoiceResponse:
-    """Create manual invoice with financial calculation and line items."""
+    """Create manual invoice with financial calculation, discount validation, and line items."""
     # 1. Validate customer exists
     customer = db.query(User).filter(User.id == payload.customer_id).first()
     if not customer:
@@ -391,13 +397,48 @@ def create_invoice(
             )
         )
 
-    # 4. Calculate financials using centralized discount-before-tax policy
-    subtotal, discount_tot, tax_tot, grand_total = calculate_invoice_financials(
-        line_computations,
-        overall_discount=payload.discount_amount or Decimal("0.00"),
-    )
+    # 4. Handle Discount Rules & Application (Task 2)
+    applied_discount_id: Optional[int] = None
+    applied_discount_code: Optional[str] = None
+    effective_discount_amount = payload.discount_amount or Decimal("0.00")
 
     now_utc = datetime.now(timezone.utc)
+    if payload.discount_code:
+        code_clean = payload.discount_code.strip().upper()
+        discount = db.query(Discount).filter(func.upper(Discount.code) == code_clean).first()
+        if not discount:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Discount code '{code_clean}' not found.",
+            )
+        is_eligible, reason, calculated_discount = evaluate_discount_eligibility(
+            discount=discount,
+            line_computations=line_computations,
+            subscription_id=payload.subscription_id,
+            evaluation_time=now_utc,
+        )
+        if not is_eligible:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Discount not applicable: {reason}",
+            )
+        effective_discount_amount = calculated_discount
+        applied_discount_id = discount.id
+        applied_discount_code = discount.code
+
+        # Increment usage counter safely
+        if not try_redeem_discount(db, discount.id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Discount code '{code_clean}' has reached its maximum allowed uses.",
+            )
+
+    # 5. Calculate financials using centralized discount-before-tax policy
+    subtotal, discount_tot, tax_tot, grand_total = calculate_invoice_financials(
+        line_computations,
+        overall_discount=effective_discount_amount,
+    )
+
     issue_dt = payload.issue_date or now_utc
     due_dt = payload.due_date or (issue_dt + timedelta(days=30))
 
@@ -409,9 +450,12 @@ def create_invoice(
         invoice_number=inv_number,
         customer_id=payload.customer_id,
         subscription_id=payload.subscription_id,
+        discount_id=applied_discount_id,
+        discount_code=applied_discount_code,
         status=InvoiceStatus.DRAFT,
         currency=payload.currency.upper(),
         payment_terms=payload.payment_terms,
+        notes=payload.notes,
         subtotal=subtotal,
         discount_total=discount_tot,
         tax_total=tax_tot,
@@ -584,50 +628,212 @@ def get_billing_schedule(
 
 
 # =========================================================================
-# 4. DISCOUNTS (PHASE 5 PLACEHOLDER INTEGRATION)
+# 4. DISCOUNT RULE MANAGEMENT (TASK 1)
 # =========================================================================
 
 @router.get(
     "/discounts",
     response_model=List[DiscountResponse],
-    summary="List promotional discount codes",
+    summary="List discount rules",
+    description="Retrieve discount rules. Staff can view all rules.",
+    dependencies=[Depends(require_roles(["admin", "finance", "sales"]))],
 )
 def list_discounts(
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
 ) -> List[DiscountResponse]:
-    """Retrieve discounts from PostgreSQL."""
-    return db.query(Discount).all()
+    """Retrieve discount rules with optional status filter."""
+    query = db.query(Discount)
+    if is_active is not None:
+        query = query.filter(Discount.is_active == is_active)
+    return query.order_by(Discount.id.asc()).offset(skip).limit(limit).all()
+
+
+@router.get(
+    "/discounts/{discount_id}",
+    response_model=DiscountResponse,
+    summary="Get discount rule by ID",
+    dependencies=[Depends(require_roles(["admin", "finance", "sales"]))],
+)
+def get_discount(
+    discount_id: int,
+    db: Session = Depends(get_db),
+) -> DiscountResponse:
+    """Retrieve details for a single discount coupon."""
+    discount = db.query(Discount).filter(Discount.id == discount_id).first()
+    if not discount:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Discount with ID {discount_id} not found.",
+        )
+    return discount
 
 
 @router.post(
     "/discounts",
     response_model=DiscountResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create discount coupon (Finance/Admin)",
-    dependencies=[Depends(require_roles(["admin", "finance"]))],
+    summary="Create discount coupon (Admin only)",
+    dependencies=[Depends(require_roles(["admin"]))],
 )
 def create_discount(
     payload: DiscountCreateRequest,
     db: Session = Depends(get_db),
 ) -> DiscountResponse:
-    """Create discount rule placeholder."""
+    """Create discount rule with full parameter validations."""
     code_upper = payload.code.strip().upper()
-    existing = db.query(Discount).filter(Discount.code == code_upper).first()
+    if not code_upper:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Discount code cannot be empty.")
+
+    existing = db.query(Discount).filter(func.upper(Discount.code) == code_upper).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Discount code '{code_upper}' already exists.",
         )
 
+    if payload.discount_type == DiscountType.PERCENTAGE:
+        if payload.amount <= Decimal("0.00") or payload.amount > Decimal("100.00"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Percentage discount value must be strictly between 0.01 and 100.00.",
+            )
+    else:
+        if payload.amount <= Decimal("0.00"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Fixed discount value must be strictly greater than zero.",
+            )
+
+    if payload.minimum_purchase_amount < Decimal("0.00"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Minimum purchase amount cannot be negative.")
+
+    if payload.minimum_quantity < 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Minimum quantity must be at least 1.")
+
+    if payload.valid_from and payload.valid_until and payload.valid_from >= payload.valid_until:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Discount valid_from must be strictly before valid_until.")
+
+    if payload.max_uses is not None and payload.max_uses <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Maximum uses must be strictly greater than zero.")
+
     discount = Discount(
         code=code_upper,
         discount_type=payload.discount_type,
         amount=quantize_money(payload.amount),
+        minimum_purchase_amount=quantize_money(payload.minimum_purchase_amount),
+        minimum_quantity=payload.minimum_quantity,
+        max_uses=payload.max_uses,
+        current_uses=0,
+        applicability=payload.applicability.strip().lower() if payload.applicability else "all",
+        applicable_product_ids=payload.applicable_product_ids,
+        applicable_subscription_ids=payload.applicable_subscription_ids,
         valid_from=payload.valid_from,
         valid_until=payload.valid_until,
         is_active=payload.is_active,
     )
     db.add(discount)
+    db.commit()
+    db.refresh(discount)
+    return discount
+
+
+@router.put(
+    "/discounts/{discount_id}",
+    response_model=DiscountResponse,
+    summary="Update discount rule (Admin only)",
+    dependencies=[Depends(require_roles(["admin"]))],
+)
+@router.patch(
+    "/discounts/{discount_id}",
+    response_model=DiscountResponse,
+    summary="Partially update discount rule (Admin only)",
+    dependencies=[Depends(require_roles(["admin"]))],
+)
+def update_discount(
+    discount_id: int,
+    payload: DiscountUpdateRequest,
+    db: Session = Depends(get_db),
+) -> DiscountResponse:
+    """Modify discount rule parameters safely."""
+    discount = db.query(Discount).filter(Discount.id == discount_id).first()
+    if not discount:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Discount with ID {discount_id} not found.",
+        )
+
+    if payload.code is not None:
+        code_upper = payload.code.strip().upper()
+        if not code_upper:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Discount code cannot be empty.")
+        if code_upper != discount.code:
+            existing = db.query(Discount).filter(func.upper(Discount.code) == code_upper, Discount.id != discount_id).first()
+            if existing:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Discount code '{code_upper}' already exists.")
+            discount.code = code_upper
+
+    if payload.discount_type is not None:
+        discount.discount_type = payload.discount_type
+
+    effective_type = payload.discount_type or discount.discount_type
+    effective_amount = payload.amount if payload.amount is not None else discount.amount
+
+    if effective_type == DiscountType.PERCENTAGE:
+        if effective_amount <= Decimal("0.00") or effective_amount > Decimal("100.00"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Percentage discount value must be strictly between 0.01 and 100.00.",
+            )
+    else:
+        if effective_amount <= Decimal("0.00"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Fixed discount value must be strictly greater than zero.",
+            )
+
+    if payload.amount is not None:
+        discount.amount = quantize_money(payload.amount)
+
+    if payload.minimum_purchase_amount is not None:
+        if payload.minimum_purchase_amount < Decimal("0.00"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Minimum purchase amount cannot be negative.")
+        discount.minimum_purchase_amount = quantize_money(payload.minimum_purchase_amount)
+
+    if payload.minimum_quantity is not None:
+        if payload.minimum_quantity < 1:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Minimum quantity must be at least 1.")
+        discount.minimum_quantity = payload.minimum_quantity
+
+    effective_valid_from = payload.valid_from if payload.valid_from is not None else discount.valid_from
+    effective_valid_until = payload.valid_until if payload.valid_until is not None else discount.valid_until
+    if effective_valid_from and effective_valid_until and effective_valid_from >= effective_valid_until:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Discount valid_from must be strictly before valid_until.")
+
+    if payload.valid_from is not None:
+        discount.valid_from = payload.valid_from
+    if payload.valid_until is not None:
+        discount.valid_until = payload.valid_until
+
+    if payload.max_uses is not None:
+        if payload.max_uses <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Maximum uses must be strictly greater than zero.")
+        discount.max_uses = payload.max_uses
+
+    if payload.applicability is not None:
+        discount.applicability = payload.applicability.strip().lower()
+
+    if payload.applicable_product_ids is not None:
+        discount.applicable_product_ids = payload.applicable_product_ids
+
+    if payload.applicable_subscription_ids is not None:
+        discount.applicable_subscription_ids = payload.applicable_subscription_ids
+
+    if payload.is_active is not None:
+        discount.is_active = payload.is_active
+
     db.commit()
     db.refresh(discount)
     return discount

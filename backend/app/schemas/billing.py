@@ -5,7 +5,7 @@ Owner: Member 3 (Subscriptions & Billing Backend)
 
 from datetime import datetime
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Optional, Any
 from pydantic import BaseModel, ConfigDict, Field
 from app.models.billing import InvoiceStatus, DiscountType
 
@@ -48,6 +48,13 @@ class DiscountBase(BaseModel):
     code: str = Field(..., examples=["SUMMER2026"])
     discount_type: DiscountType = Field(default=DiscountType.PERCENTAGE)
     amount: Decimal = Field(..., gt=0, examples=[15.00])
+    minimum_purchase_amount: Decimal = Field(default=Decimal("0.00"), ge=0, examples=[50.00])
+    minimum_quantity: int = Field(default=1, ge=1, examples=[1])
+    max_uses: Optional[int] = Field(None, gt=0, examples=[100])
+    current_uses: int = Field(default=0, ge=0)
+    applicability: str = Field(default="all", examples=["all"])  # "all", "products", "subscriptions"
+    applicable_product_ids: Optional[List[int]] = None
+    applicable_subscription_ids: Optional[List[int]] = None
     valid_from: Optional[datetime] = None
     valid_until: Optional[datetime] = None
     is_active: bool = True
@@ -55,6 +62,21 @@ class DiscountBase(BaseModel):
 
 class DiscountCreateRequest(DiscountBase):
     pass
+
+
+class DiscountUpdateRequest(BaseModel):
+    code: Optional[str] = None
+    discount_type: Optional[DiscountType] = None
+    amount: Optional[Decimal] = Field(None, gt=0)
+    minimum_purchase_amount: Optional[Decimal] = Field(None, ge=0)
+    minimum_quantity: Optional[int] = Field(None, ge=1)
+    max_uses: Optional[int] = Field(None, gt=0)
+    applicability: Optional[str] = None
+    applicable_product_ids: Optional[List[int]] = None
+    applicable_subscription_ids: Optional[List[int]] = None
+    valid_from: Optional[datetime] = None
+    valid_until: Optional[datetime] = None
+    is_active: Optional[bool] = None
 
 
 class DiscountResponse(DiscountBase):
@@ -111,6 +133,7 @@ class InvoiceCreateRequest(BaseModel):
     subscription_id: Optional[int] = None
     currency: str = Field(default="USD", min_length=3, max_length=3)
     payment_terms: str = Field(default="Net 30", max_length=64)
+    notes: Optional[str] = None
     issue_date: Optional[datetime] = None
     due_date: Optional[datetime] = None
     items: List[InvoiceLineItemBase]
@@ -125,9 +148,12 @@ class InvoiceResponse(BaseModel):
     customer_id: int
     customer: Optional[CustomerSummaryResponse] = None
     subscription_id: Optional[int] = None
+    discount_id: Optional[int] = None
+    discount_code: Optional[str] = None
     status: InvoiceStatus
     currency: str
     payment_terms: str
+    notes: Optional[str] = None
     subtotal: Decimal
     discount_total: Decimal
     tax_total: Decimal
