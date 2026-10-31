@@ -232,7 +232,7 @@ def update_subscription_plan(
 
 
 # =========================================================================
-# 2. SUBSCRIPTION LIFECYCLE
+# 2. SUBSCRIPTION LIFECYCLE & CUSTOMER SELF-SERVICE
 # =========================================================================
 
 @router.get(
@@ -259,7 +259,7 @@ def list_subscriptions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> List[SubscriptionResponse]:
-    """Retrieve subscriptions from PostgreSQL with RBAC filtering."""
+    """Retrieve subscriptions from PostgreSQL with strict customer ownership scoping."""
     query = db.query(Subscription)
 
     if current_user.role == UserRole.CUSTOMER:
@@ -280,6 +280,11 @@ def list_subscriptions(
     "/{subscription_id}",
     response_model=SubscriptionResponse,
     summary="Get subscription by ID",
+)
+@router.get(
+    "/subscriptions/{subscription_id}",
+    response_model=SubscriptionResponse,
+    include_in_schema=False,
 )
 def get_subscription(
     subscription_id: int,
@@ -327,7 +332,6 @@ def create_subscription(
     db: Session = Depends(get_db),
 ) -> SubscriptionResponse:
     """Provision a new subscription contract in PostgreSQL."""
-    # Ensure customer can only create for themselves
     if current_user.role == UserRole.CUSTOMER and payload.customer_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -358,17 +362,15 @@ def create_subscription(
     if start_dt.tzinfo is None:
         start_dt = start_dt.replace(tzinfo=timezone.utc)
 
-    # Initial period
     sub = Subscription(
         customer_id=payload.customer_id,
         plan_id=payload.plan_id,
         status=SubscriptionStatus.ACTIVE,
         start_date=start_dt,
         current_period_start=start_dt,
-        current_period_end=start_dt,  # temporary placeholder for advancement
+        current_period_end=start_dt,
         auto_renew=payload.auto_renew,
     )
-    # Calculate initial period end using plan cycle
     sub.current_period_end = advance_billing_period(sub, start_dt)
 
     db.add(sub)
@@ -400,26 +402,33 @@ def create_subscription(
     "/{subscription_id}/pause",
     response_model=SubscriptionResponse,
     summary="Pause active subscription",
-    dependencies=[Depends(require_roles(["admin", "sales", "finance"]))],
+    dependencies=[Depends(require_roles(["admin", "sales", "finance", "customer"]))],
 )
 @router.post(
     "/subscriptions/{subscription_id}/pause",
     response_model=SubscriptionResponse,
     include_in_schema=False,
-    dependencies=[Depends(require_roles(["admin", "sales", "finance"]))],
+    dependencies=[Depends(require_roles(["admin", "sales", "finance", "customer"]))],
 )
 def pause_subscription(
     subscription_id: int,
     payload: Optional[SubscriptionStatusChangeRequest] = None,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SubscriptionResponse:
-    """Pause an active subscription."""
+    """Pause an active subscription with customer ownership and plan policy enforcement."""
     sub = db.query(Subscription).filter(Subscription.id == subscription_id).first()
     if not sub:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Subscription with ID {subscription_id} not found.",
         )
+
+    if current_user.role == UserRole.CUSTOMER:
+        if sub.customer_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: You may only pause your own subscriptions.")
+        if sub.plan and not sub.plan.allow_pause:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Subscription plan does not allow pausing.")
 
     if sub.status != SubscriptionStatus.ACTIVE:
         raise HTTPException(
@@ -438,16 +447,17 @@ def pause_subscription(
     "/{subscription_id}/resume",
     response_model=SubscriptionResponse,
     summary="Resume paused subscription",
-    dependencies=[Depends(require_roles(["admin", "sales", "finance"]))],
+    dependencies=[Depends(require_roles(["admin", "sales", "finance", "customer"]))],
 )
 @router.post(
     "/subscriptions/{subscription_id}/resume",
     response_model=SubscriptionResponse,
     include_in_schema=False,
-    dependencies=[Depends(require_roles(["admin", "sales", "finance"]))],
+    dependencies=[Depends(require_roles(["admin", "sales", "finance", "customer"]))],
 )
 def resume_subscription(
     subscription_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SubscriptionResponse:
     """Resume a paused subscription."""
@@ -457,6 +467,9 @@ def resume_subscription(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Subscription with ID {subscription_id} not found.",
         )
+
+    if current_user.role == UserRole.CUSTOMER and sub.customer_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: You may only resume your own subscriptions.")
 
     if sub.status != SubscriptionStatus.PAUSED:
         raise HTTPException(
@@ -475,26 +488,33 @@ def resume_subscription(
     "/{subscription_id}/cancel",
     response_model=SubscriptionResponse,
     summary="Cancel subscription contract",
-    dependencies=[Depends(require_roles(["admin", "sales", "finance"]))],
+    dependencies=[Depends(require_roles(["admin", "sales", "finance", "customer"]))],
 )
 @router.post(
     "/subscriptions/{subscription_id}/cancel",
     response_model=SubscriptionResponse,
     include_in_schema=False,
-    dependencies=[Depends(require_roles(["admin", "sales", "finance"]))],
+    dependencies=[Depends(require_roles(["admin", "sales", "finance", "customer"]))],
 )
 def cancel_subscription(
     subscription_id: int,
     payload: Optional[SubscriptionStatusChangeRequest] = None,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SubscriptionResponse:
-    """Cancel a subscription contract."""
+    """Cancel a subscription contract with customer ownership and early-close policy check."""
     sub = db.query(Subscription).filter(Subscription.id == subscription_id).first()
     if not sub:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Subscription with ID {subscription_id} not found.",
         )
+
+    if current_user.role == UserRole.CUSTOMER:
+        if sub.customer_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: You may only cancel your own subscriptions.")
+        if sub.plan and not sub.plan.allow_early_close:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Subscription plan does not allow early cancellation.")
 
     if sub.status == SubscriptionStatus.CANCELLED:
         return sub
