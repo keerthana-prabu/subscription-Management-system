@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Brightloop Subscription Management System
 
 Enterprise SaaS Subscription Lifecycle, Invoicing, and Billing Management Platform.
@@ -170,3 +171,6 @@ The system models the following interconnected domain entities:
 - **`discounts`**: Promotional coupon codes (fixed amount or percentage).
 - **`payments`**: Payment ledger, transaction references, refunds (`pending`, `succeeded`, `failed`, `refunded`).
 
+=======
+# subscription-Management-system
+>>>>>>> 39da671f860fbd86d44f969b4359fe3c46ccff00
