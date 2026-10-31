@@ -16,9 +16,15 @@ import type {
   ProductCreatePayload,
   ProductVariant,
   ProductVariantCreatePayload,
+  QuotationTemplate,
+  QuotationTemplateCreatePayload,
+  Quotation,
+  QuotationCreatePayload,
   SubscriptionPlan,
   SubscriptionPlanCreatePayload,
   Subscription,
+  SubscriptionCreatePayload,
+  SubscriptionStatusChangePayload,
   Invoice,
   Payment,
   MRRReport,
@@ -163,6 +169,13 @@ class ApiClient {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    getQuotationTemplates: (): Promise<QuotationTemplate[]> =>
+      this.request<QuotationTemplate[]>('/catalog/quotation-templates'),
+    createQuotationTemplate: (data: QuotationTemplateCreatePayload): Promise<QuotationTemplate> =>
+      this.request<QuotationTemplate>('/catalog/quotation-templates', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
   };
 
   // Subscriptions Endpoints (Member 3)
@@ -176,6 +189,32 @@ class ApiClient {
     deletePlan: (id: number): Promise<{ success: boolean; message?: string }> =>
       this.request<{ success: boolean; message?: string }>(`/subscriptions/plans/${id}`, { method: 'DELETE' }),
     getSubscriptions: (): Promise<Subscription[]> => this.request<Subscription[]>('/subscriptions/subscriptions'),
+    createSubscription: (data: SubscriptionCreatePayload): Promise<Subscription> =>
+      this.request<Subscription>('/subscriptions/subscriptions', { method: 'POST', body: JSON.stringify(data) }),
+    pauseSubscription: (id: number, data?: SubscriptionStatusChangePayload): Promise<Subscription> =>
+      this.request<Subscription>(`/subscriptions/subscriptions/${id}/pause`, {
+        method: 'POST',
+        body: JSON.stringify(data || {}),
+      }),
+    resumeSubscription: (id: number): Promise<Subscription> =>
+      this.request<Subscription>(`/subscriptions/subscriptions/${id}/resume`, { method: 'POST' }),
+    cancelSubscription: (id: number, data?: SubscriptionStatusChangePayload): Promise<Subscription> =>
+      this.request<Subscription>(`/subscriptions/subscriptions/${id}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify(data || {}),
+      }),
+  };
+
+  // Quotation Management Endpoints
+  quotations = {
+    getQuotations: (): Promise<Quotation[]> => this.request<Quotation[]>('/quotations'),
+    getQuotation: (id: number): Promise<Quotation> => this.request<Quotation>(`/quotations/${id}`),
+    createQuotation: (data: QuotationCreatePayload): Promise<Quotation> =>
+      this.request<Quotation>('/quotations', { method: 'POST', body: JSON.stringify(data) }),
+    confirmQuotation: (id: number): Promise<Quotation> =>
+      this.request<Quotation>(`/quotations/${id}/confirm`, { method: 'POST' }),
+    convertToSubscription: (id: number): Promise<Subscription> =>
+      this.request<Subscription>(`/quotations/${id}/convert`, { method: 'POST' }),
   };
 
   // Billing Endpoints (Member 3)

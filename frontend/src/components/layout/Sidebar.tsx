@@ -10,11 +10,12 @@ import {
   Lock,
   ChevronRight,
   Sparkles,
+  FileSpreadsheet,
 } from 'lucide-react';
 import type { User, UserRole } from '../../api/types';
 import { Badge } from '../common/Badge';
 
-export type TabId = 'dashboard' | 'auth' | 'catalog' | 'subscriptions' | 'billing' | 'reports';
+export type TabId = 'dashboard' | 'auth' | 'quotations' | 'catalog' | 'subscriptions' | 'billing' | 'reports';
 
 export interface NavItemConfig {
   id: TabId;
@@ -33,6 +34,13 @@ export const NAV_ITEMS: NavItemConfig[] = [
     allowedRoles: ['admin', 'sales', 'finance', 'customer'],
   },
   {
+    id: 'quotations',
+    label: 'Quotations & Proposals',
+    description: 'Templates, proposals & pricing',
+    icon: <FileSpreadsheet className="w-4 h-4" />,
+    allowedRoles: ['admin', 'sales'],
+  },
+  {
     id: 'catalog',
     label: 'Catalog & Variants',
     description: 'Products, variants & quotes',
@@ -41,8 +49,8 @@ export const NAV_ITEMS: NavItemConfig[] = [
   },
   {
     id: 'subscriptions',
-    label: 'Subscription Plans',
-    description: 'Plans & customer lifecycle',
+    label: 'Subscriptions & Lifecycle',
+    description: 'Contracts, plans & lifecycle',
     icon: <Repeat className="w-4 h-4" />,
     allowedRoles: ['admin', 'sales', 'customer'],
   },

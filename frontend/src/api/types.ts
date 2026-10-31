@@ -128,9 +128,106 @@ export interface QuotationTemplate {
   updated_at: string;
 }
 
+export interface QuotationTemplateCreatePayload {
+  name: string;
+  description?: string;
+  terms_and_conditions?: string;
+  default_validity_days: number;
+  is_active?: boolean;
+}
+
+export type QuotationStatus = 'draft' | 'sent' | 'confirmed' | 'converted' | 'expired';
+
+export interface QuotationLineItem {
+  id: number;
+  quotation_id?: number;
+  product_id: number;
+  product_name: string;
+  variant_id?: number;
+  variant_name?: string;
+  sku: string;
+  description?: string;
+  quantity: number;
+  unit_price: number;
+  tax_percentage: number;
+  discount_percentage?: number;
+  subtotal: number;
+  tax_amount: number;
+  total_amount: number;
+}
+
+export interface Quotation {
+  id: number;
+  quotation_number: string;
+  customer_id: number;
+  customer_name: string;
+  customer_email: string;
+  template_id?: number;
+  template_name?: string;
+  status: QuotationStatus;
+  valid_until: string;
+  notes?: string;
+  terms_and_conditions?: string;
+  currency: string;
+  subtotal: number;
+  tax_total: number;
+  total_amount: number;
+  items: QuotationLineItem[];
+  converted_subscription_id?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuotationCreatePayload {
+  customer_id: number;
+  customer_name: string;
+  customer_email: string;
+  template_id?: number;
+  template_name?: string;
+  valid_until: string;
+  notes?: string;
+  terms_and_conditions?: string;
+  currency?: string;
+  items: Array<{
+    product_id: number;
+    product_name: string;
+    variant_id?: number;
+    variant_name?: string;
+    sku: string;
+    quantity: number;
+    unit_price: number;
+    tax_percentage: number;
+    discount_percentage?: number;
+  }>;
+}
+
 export type BillingCycle = 'monthly' | 'quarterly' | 'annual';
 export type PlanBillingInterval = 'daily' | 'weekly' | 'monthly' | 'yearly';
 export type SubscriptionStatus = 'draft' | 'active' | 'paused' | 'cancelled' | 'expired';
+
+export interface SubscriptionItemInput {
+  variant_id: number;
+  quantity: number;
+  unit_price?: number;
+  product_name?: string;
+  variant_name?: string;
+  sku?: string;
+}
+
+export interface SubscriptionCreatePayload {
+  customer_id: number;
+  customer_name?: string;
+  customer_email?: string;
+  plan_id: number;
+  start_date?: string;
+  auto_renew?: boolean;
+  payment_terms?: string;
+  items?: SubscriptionItemInput[];
+}
+
+export interface SubscriptionStatusChangePayload {
+  reason?: string;
+}
 
 export interface SubscriptionPlan {
   id: number;
@@ -181,22 +278,49 @@ export interface SubscriptionItem {
   subscription_id: number;
   variant_id: number;
   quantity: number;
-  unit_price: string;
+  unit_price: string | number;
+  product_name?: string;
+  variant_name?: string;
+  sku?: string;
+  subtotal?: number;
+}
+
+export interface SubscriptionLifecycleEvent {
+  state: string;
+  timestamp: string;
+  note?: string;
+  performed_by?: string;
 }
 
 export interface Subscription {
   id: number;
+  subscription_number?: string;
   customer_id: number;
+  customer_name?: string;
+  customer_email?: string;
   plan_id: number;
+  plan_name?: string;
+  plan_code?: string;
+  billing_interval?: PlanBillingInterval;
+  billing_cycle?: BillingCycle;
   status: SubscriptionStatus;
   start_date: string;
   current_period_start: string;
   current_period_end: string;
+  next_billing_date?: string;
   trial_end?: string;
   paused_at?: string;
   cancelled_at?: string;
   auto_renew: boolean;
+  payment_terms?: string;
+  currency?: string;
+  subtotal?: number;
+  tax_total?: number;
+  total_amount?: number;
   items: SubscriptionItem[];
+  related_quotation_id?: number;
+  related_invoice_id?: number;
+  lifecycle_history?: SubscriptionLifecycleEvent[];
   created_at: string;
   updated_at: string;
 }

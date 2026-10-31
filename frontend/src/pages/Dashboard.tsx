@@ -287,10 +287,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ health, error, user, onNav
                     View Plans <ArrowUpRight className="w-3 h-3" />
                   </button>
                 </div>
-                <div className="p-4 bg-slate-50/70 rounded-xl border border-slate-200/70">
-                  <div className="text-xs font-semibold text-slate-500">Quotation Templates</div>
-                  <div className="text-sm font-bold text-slate-800 mt-1">Customer Proposals</div>
-                  <div className="text-[11px] text-slate-400 mt-1">Ready for contract phase</div>
+                <div className="p-4 bg-slate-50/70 hover:bg-indigo-50/40 rounded-xl border border-slate-200/70 transition-colors">
+                  <div className="text-xs font-semibold text-slate-500">Quotations & Proposals</div>
+                  <div className="text-sm font-bold text-slate-800 mt-1">Author Proposals</div>
+                  <button
+                    onClick={() => onNavigate('quotations')}
+                    className="mt-3 text-xs font-bold text-indigo-600 hover:text-indigo-800 inline-flex items-center gap-1"
+                  >
+                    Manage Quotes <ArrowUpRight className="w-3 h-3" />
+                  </button>
                 </div>
                 <div className="p-4 bg-slate-50/70 rounded-xl border border-slate-200/70">
                   <div className="text-xs font-semibold text-slate-500">Account</div>

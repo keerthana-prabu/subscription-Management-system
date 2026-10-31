@@ -7,6 +7,7 @@ import { Dashboard } from './pages/Dashboard';
 import { AuthPage } from './pages/AuthPage';
 import { CatalogPage } from './pages/CatalogPage';
 import { SubscriptionsPage } from './pages/SubscriptionsPage';
+import { QuotationsPage } from './pages/QuotationsPage';
 import { BillingPage } from './pages/BillingPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { api } from './api/client';
@@ -118,6 +119,9 @@ function MainLayout() {
                 <Dashboard health={health} error={errorMessage} user={user} onNavigate={setCurrentTab} />
               )}
               {currentTab === 'auth' && <AuthPage onAuthSuccess={() => setCurrentTab('dashboard')} />}
+              {currentTab === 'quotations' && (
+                <QuotationsPage onNavigateToSubscriptions={() => setCurrentTab('subscriptions')} />
+              )}
               {currentTab === 'catalog' && <CatalogPage />}
               {currentTab === 'subscriptions' && <SubscriptionsPage />}
               {currentTab === 'billing' && <BillingPage />}
