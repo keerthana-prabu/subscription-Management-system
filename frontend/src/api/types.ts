@@ -5,7 +5,40 @@
 
 export type UserRole = 'admin' | 'sales' | 'finance' | 'customer';
 
+export interface UserRegisterPayload {
+  email: string;
+  password: string;
+  full_name: string;
+  role?: UserRole;
+}
+
+export interface UserLoginPayload {
+  email: string;
+  password: string;
+}
+
+export interface ForgotPasswordPayload {
+  email: string;
+}
+
+export interface ResetPasswordPayload {
+  token: string;
+  new_password: string;
+}
+
+export interface ValidationErrorItem {
+  field?: string;
+  message: string;
+}
+
+export interface ApiError {
+  message: string;
+  status: number;
+  validationErrors?: ValidationErrorItem[];
+}
+
 export interface User {
+
   id: number;
   email: string;
   full_name: string;
@@ -29,13 +62,18 @@ export interface HealthResponse {
   timestamp: string;
 }
 
+export type ProductType = 'service' | 'storable' | 'consumable' | 'subscription';
+
 export interface ProductVariant {
   id: number;
   product_id: number;
   sku: string;
   name: string;
+  brand?: string;
   billing_metric: string;
-  base_price: string;
+  base_price: string | number;
+  price_adjustment?: number;
+  final_price?: number;
   currency: string;
   is_active: boolean;
   created_at: string;
@@ -46,11 +84,36 @@ export interface Product {
   id: number;
   name: string;
   code: string;
+  product_type?: ProductType;
+  sales_price?: number | string;
+  cost_price?: number | string;
   description?: string;
   is_active: boolean;
   variants: ProductVariant[];
   created_at: string;
   updated_at: string;
+}
+
+export interface ProductCreatePayload {
+  name: string;
+  code: string;
+  product_type?: ProductType;
+  sales_price?: number;
+  cost_price?: number;
+  description?: string;
+  is_active: boolean;
+  variants?: Array<ProductVariantCreatePayload>;
+}
+
+export interface ProductVariantCreatePayload {
+  sku: string;
+  name: string;
+  brand?: string;
+  billing_metric: string;
+  base_price: number;
+  price_adjustment?: number;
+  currency?: string;
+  is_active?: boolean;
 }
 
 export interface QuotationTemplate {
@@ -66,6 +129,7 @@ export interface QuotationTemplate {
 }
 
 export type BillingCycle = 'monthly' | 'quarterly' | 'annual';
+export type PlanBillingInterval = 'daily' | 'weekly' | 'monthly' | 'yearly';
 export type SubscriptionStatus = 'draft' | 'active' | 'paused' | 'cancelled' | 'expired';
 
 export interface SubscriptionPlan {
@@ -74,13 +138,42 @@ export interface SubscriptionPlan {
   code: string;
   description?: string;
   billing_cycle: BillingCycle;
+  billing_interval?: PlanBillingInterval;
   billing_interval_count: number;
-  base_price: string;
+  base_price: string | number;
+  price?: number;
+  min_quantity?: number;
   currency: string;
   trial_period_days: number;
+  start_date?: string;
+  end_date?: string;
+  auto_close?: boolean;
+  early_close_allowed?: boolean;
+  pause_allowed?: boolean;
+  auto_renew?: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface SubscriptionPlanCreatePayload {
+  name: string;
+  code: string;
+  description?: string;
+  billing_cycle?: BillingCycle;
+  billing_interval?: PlanBillingInterval;
+  billing_interval_count: number;
+  base_price: number;
+  min_quantity?: number;
+  currency?: string;
+  trial_period_days?: number;
+  start_date?: string;
+  end_date?: string;
+  auto_close?: boolean;
+  early_close_allowed?: boolean;
+  pause_allowed?: boolean;
+  auto_renew?: boolean;
+  is_active: boolean;
 }
 
 export interface SubscriptionItem {
