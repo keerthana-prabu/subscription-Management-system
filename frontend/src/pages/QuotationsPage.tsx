@@ -450,11 +450,10 @@ export const QuotationsPage: React.FC<QuotationsPageProps> = ({ onNavigateToSubs
         <button
           type="button"
           onClick={() => setActiveTab('quotations')}
-          className={`pb-3 transition-colors flex items-center gap-2 border-b-2 ${
-            activeTab === 'quotations'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-transparent text-slate-500 hover:text-slate-900'
-          }`}
+          className={`pb-3 transition-colors flex items-center gap-2 border-b-2 ${activeTab === 'quotations'
+            ? 'border-indigo-600 text-indigo-600'
+            : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
         >
           <FileSpreadsheet className="w-4 h-4" />
           <span>Active Quotations ({quotations.length})</span>
@@ -463,11 +462,10 @@ export const QuotationsPage: React.FC<QuotationsPageProps> = ({ onNavigateToSubs
         <button
           type="button"
           onClick={() => setActiveTab('templates')}
-          className={`pb-3 transition-colors flex items-center gap-2 border-b-2 ${
-            activeTab === 'templates'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-transparent text-slate-500 hover:text-slate-900'
-          }`}
+          className={`pb-3 transition-colors flex items-center gap-2 border-b-2 ${activeTab === 'templates'
+            ? 'border-indigo-600 text-indigo-600'
+            : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
         >
           <Layers className="w-4 h-4" />
           <span>Reusable Templates ({templates.length})</span>
@@ -501,11 +499,10 @@ export const QuotationsPage: React.FC<QuotationsPageProps> = ({ onNavigateToSubs
                       setStatusFilter(s);
                       setCurrentPage(1);
                     }}
-                    className={`px-3 py-1.5 rounded-lg capitalize transition-all ${
-                      statusFilter === s
-                        ? 'bg-white text-indigo-700 shadow-2xs font-bold'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                    className={`px-3 py-1.5 rounded-lg capitalize transition-all ${statusFilter === s
+                      ? 'bg-white text-indigo-700 shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                      }`}
                   >
                     {s}
                   </button>
@@ -584,20 +581,18 @@ export const QuotationsPage: React.FC<QuotationsPageProps> = ({ onNavigateToSubs
                           </td>
                           <td className="px-4 py-3.5">
                             <span
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold capitalize ${
-                                q.status === 'confirmed'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : q.status === 'converted'
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold capitalize ${q.status === 'confirmed'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : q.status === 'converted'
                                   ? 'bg-purple-50 text-purple-700 border border-purple-200'
                                   : 'bg-slate-100 text-slate-700'
-                              }`}
+                                }`}
                             >
                               <span
-                                className={`w-1.5 h-1.5 rounded-full ${
-                                  q.status === 'confirmed' || q.status === 'converted'
-                                    ? 'bg-emerald-500'
-                                    : 'bg-slate-400'
-                                }`}
+                                className={`w-1.5 h-1.5 rounded-full ${q.status === 'confirmed' || q.status === 'converted'
+                                  ? 'bg-emerald-500'
+                                  : 'bg-slate-400'
+                                  }`}
                               />
                               {q.status}
                             </span>
@@ -684,11 +679,10 @@ export const QuotationsPage: React.FC<QuotationsPageProps> = ({ onNavigateToSubs
                       {tpl.default_validity_days} Days Validity
                     </span>
                     <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        tpl.is_active
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-slate-100 text-slate-600'
-                      }`}
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${tpl.is_active
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-slate-100 text-slate-600'
+                        }`}
                     >
                       {tpl.is_active ? 'Active' : 'Archived'}
                     </span>
