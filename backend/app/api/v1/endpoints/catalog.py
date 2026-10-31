@@ -170,6 +170,12 @@ def create_product(
     summary="Update product metadata (Admin only)",
     dependencies=[Depends(require_roles(["admin"]))],
 )
+@router.put(
+    "/products/{product_id}",
+    response_model=ProductResponse,
+    include_in_schema=False,
+    dependencies=[Depends(require_roles(["admin"]))],
+)
 def update_product(
     product_id: int,
     payload: ProductUpdateRequest,
@@ -588,6 +594,12 @@ def create_quotation_template(
     "/quotation-templates/{template_id}",
     response_model=QuotationTemplateResponse,
     summary="Update quotation template (Sales/Admin)",
+    dependencies=[Depends(require_roles(["admin", "sales"]))],
+)
+@router.put(
+    "/quotation-templates/{template_id}",
+    response_model=QuotationTemplateResponse,
+    include_in_schema=False,
     dependencies=[Depends(require_roles(["admin", "sales"]))],
 )
 def update_quotation_template(

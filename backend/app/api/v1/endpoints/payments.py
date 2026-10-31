@@ -263,7 +263,7 @@ def create_payment(
         invoice.status = InvoiceStatus.CONFIRMED
 
     db.commit()
-    db.refresh(payment)
+    # db.refresh(payment)
     return payment
 
 
@@ -333,5 +333,5 @@ def refund_payment(
         invoice.paid_at = None
 
     db.commit()
-    db.refresh(payment)
+    # db.refresh(payment)
     return payment

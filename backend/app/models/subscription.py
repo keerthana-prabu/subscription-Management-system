@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from app.models.auth import User
     from app.models.catalog import ProductVariant, QuotationTemplate
     from app.models.billing import Invoice
+    from app.models.quotation import Quotation
 
 
 class BillingCycle(str, enum.Enum):
@@ -30,10 +31,13 @@ class BillingCycle(str, enum.Enum):
 class SubscriptionStatus(str, enum.Enum):
     """Lifecycle statuses of a customer subscription."""
     DRAFT = "draft"
+    QUOTATION = "quotation"
+    CONFIRMED = "confirmed"
     ACTIVE = "active"
     PAUSED = "paused"
     CANCELLED = "cancelled"
     EXPIRED = "expired"
+    CLOSED = "closed"
 
 
 class SubscriptionPlan(Base, TimestampMixin):
@@ -114,6 +118,11 @@ class Subscription(Base, TimestampMixin):
     paused_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     auto_renew: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    quotation_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("quotations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     # Relationships
     customer: Mapped["User"] = relationship("User", back_populates="subscriptions")
@@ -126,6 +135,11 @@ class Subscription(Base, TimestampMixin):
     invoices: Mapped[List["Invoice"]] = relationship(
         "Invoice",
         back_populates="subscription",
+    )
+
+    quotation: Mapped[Optional["Quotation"]] = relationship(
+        "Quotation",
+        foreign_keys=[quotation_id],
     )
 
     def __repr__(self) -> str:

@@ -10,6 +10,7 @@ from app.models.subscription import (
     BillingCycle,
     SubscriptionStatus,
 )
+from app.models.quotation import Quotation, QuotationLineItem, QuotationStatus
 from app.models.billing import (
     Invoice,
     InvoiceLineItem,
@@ -35,6 +36,9 @@ __all__ = [
     "SubscriptionItem",
     "BillingCycle",
     "SubscriptionStatus",
+    "Quotation",
+    "QuotationLineItem",
+    "QuotationStatus",
     "Invoice",
     "InvoiceLineItem",
     "TaxRate",

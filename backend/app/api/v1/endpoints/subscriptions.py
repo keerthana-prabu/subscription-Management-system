@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_roles
@@ -144,6 +144,12 @@ def create_subscription_plan(
     "/plans/{plan_id}",
     response_model=SubscriptionPlanResponse,
     summary="Update subscription plan (Admin only)",
+    dependencies=[Depends(require_roles(["admin"]))],
+)
+@router.put(
+    "/plans/{plan_id}",
+    response_model=SubscriptionPlanResponse,
+    include_in_schema=False,
     dependencies=[Depends(require_roles(["admin"]))],
 )
 def update_subscription_plan(
@@ -521,6 +527,170 @@ def cancel_subscription(
 
     sub.status = SubscriptionStatus.CANCELLED
     sub.cancelled_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(sub)
+    return sub
+
+
+@router.post(
+    "/{subscription_id}/confirm",
+    response_model=SubscriptionResponse,
+    summary="Confirm subscription (Admin/Sales)",
+    dependencies=[Depends(require_roles(["admin", "sales"]))],
+)
+@router.post(
+    "/subscriptions/{subscription_id}/confirm",
+    response_model=SubscriptionResponse,
+    include_in_schema=False,
+    dependencies=[Depends(require_roles(["admin", "sales"]))],
+)
+def confirm_subscription(
+    subscription_id: int,
+    db: Session = Depends(get_db),
+) -> SubscriptionResponse:
+    """Transition draft/quotation subscription to CONFIRMED."""
+    sub = db.query(Subscription).filter(Subscription.id == subscription_id).first()
+    if not sub:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Subscription with ID {subscription_id} not found.",
+        )
+    if sub.status in (SubscriptionStatus.CANCELLED, SubscriptionStatus.CLOSED, SubscriptionStatus.EXPIRED):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot confirm subscription in '{sub.status.value}' state.",
+        )
+    sub.status = SubscriptionStatus.CONFIRMED
+    db.commit()
+    db.refresh(sub)
+    return sub
+
+
+@router.post(
+    "/{subscription_id}/activate",
+    response_model=SubscriptionResponse,
+    summary="Activate subscription (Admin/Sales)",
+    dependencies=[Depends(require_roles(["admin", "sales"]))],
+)
+@router.post(
+    "/subscriptions/{subscription_id}/activate",
+    response_model=SubscriptionResponse,
+    include_in_schema=False,
+    dependencies=[Depends(require_roles(["admin", "sales"]))],
+)
+def activate_subscription(
+    subscription_id: int,
+    db: Session = Depends(get_db),
+) -> SubscriptionResponse:
+    """Transition subscription from draft/confirmed to ACTIVE."""
+    sub = db.query(Subscription).filter(Subscription.id == subscription_id).first()
+    if not sub:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Subscription with ID {subscription_id} not found.",
+        )
+    if sub.status == SubscriptionStatus.ACTIVE:
+        return sub
+    if sub.status in (SubscriptionStatus.CANCELLED, SubscriptionStatus.CLOSED, SubscriptionStatus.EXPIRED):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot activate subscription in '{sub.status.value}' state.",
+        )
+    sub.status = SubscriptionStatus.ACTIVE
+    db.commit()
+    db.refresh(sub)
+    return sub
+
+
+@router.post(
+    "/{subscription_id}/renew",
+    response_model=SubscriptionResponse,
+    summary="Renew subscription period",
+    dependencies=[Depends(require_roles(["admin", "sales", "finance", "customer"]))],
+)
+@router.post(
+    "/subscriptions/{subscription_id}/renew",
+    response_model=SubscriptionResponse,
+    include_in_schema=False,
+    dependencies=[Depends(require_roles(["admin", "sales", "finance", "customer"]))],
+)
+def renew_subscription(
+    subscription_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SubscriptionResponse:
+    """Advance subscription billing period according to plan rules."""
+    sub = db.query(Subscription).filter(Subscription.id == subscription_id).first()
+    if not sub:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Subscription with ID {subscription_id} not found.",
+        )
+    if current_user.role == UserRole.CUSTOMER and sub.customer_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You may only renew your own subscriptions.",
+        )
+    if sub.plan and not sub.plan.allow_renewal:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Subscription plan does not permit manual renewal.",
+        )
+    if sub.status in (SubscriptionStatus.CANCELLED, SubscriptionStatus.CLOSED):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot renew subscription in '{sub.status.value}' state.",
+        )
+
+    new_start = sub.current_period_end
+    new_end = advance_billing_period(sub, new_start)
+    sub.current_period_start = new_start
+    sub.current_period_end = new_end
+    sub.status = SubscriptionStatus.ACTIVE
+    db.commit()
+    db.refresh(sub)
+    return sub
+
+
+@router.post(
+    "/{subscription_id}/close",
+    response_model=SubscriptionResponse,
+    summary="Close subscription contract",
+    dependencies=[Depends(require_roles(["admin", "sales", "finance", "customer"]))],
+)
+@router.post(
+    "/subscriptions/{subscription_id}/close",
+    response_model=SubscriptionResponse,
+    include_in_schema=False,
+    dependencies=[Depends(require_roles(["admin", "sales", "finance", "customer"]))],
+)
+def close_subscription(
+    subscription_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SubscriptionResponse:
+    """Formally close a subscription contract."""
+    sub = db.query(Subscription).filter(Subscription.id == subscription_id).first()
+    if not sub:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Subscription with ID {subscription_id} not found.",
+        )
+    if current_user.role == UserRole.CUSTOMER:
+        if sub.customer_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You may only close your own subscriptions.",
+            )
+        if sub.plan and not sub.plan.allow_early_close:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Subscription plan does not allow early closure.",
+            )
+
+    sub.status = SubscriptionStatus.CLOSED
+    sub.cancelled_at = datetime.now(timezone.utc)
+    sub.auto_renew = False
     db.commit()
     db.refresh(sub)
     return sub

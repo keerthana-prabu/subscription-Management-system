@@ -91,6 +91,10 @@ class SubscriptionItemResponse(BaseModel):
     variant_id: int
     quantity: int
     unit_price: Decimal
+    product_name: Optional[str] = None
+    variant_name: Optional[str] = None
+    sku: Optional[str] = None
+    subtotal: Optional[Decimal] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -112,16 +116,28 @@ class SubscriptionStatusChangeRequest(BaseModel):
 class SubscriptionResponse(BaseModel):
     """Detailed subscription lifecycle schema."""
     id: int
+    subscription_number: Optional[str] = None
     customer_id: int
+    customer_name: Optional[str] = None
+    customer_email: Optional[str] = None
     plan_id: int
+    plan_name: Optional[str] = None
+    plan_code: Optional[str] = None
+    billing_cycle: Optional[BillingCycle] = None
     status: SubscriptionStatus
     start_date: datetime
     current_period_start: datetime
     current_period_end: datetime
+    next_billing_date: Optional[datetime] = None
     trial_end: Optional[datetime] = None
     paused_at: Optional[datetime] = None
     cancelled_at: Optional[datetime] = None
     auto_renew: bool
+    currency: Optional[str] = None
+    subtotal: Optional[Decimal] = None
+    tax_total: Optional[Decimal] = None
+    total_amount: Optional[Decimal] = None
+    related_quotation_id: Optional[int] = None
     items: List[SubscriptionItemResponse] = []
     created_at: datetime
     updated_at: datetime
