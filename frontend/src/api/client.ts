@@ -30,9 +30,13 @@ import type {
   TaxRate,
   TaxRateCreatePayload,
   Discount,
+  DiscountCreatePayload,
   Payment,
+  PaymentCreatePayload,
+  PaymentRefundPayload,
   MRRReport,
   RevenueReport,
+  SubscriptionReport,
 } from './types';
 
 export class ApiClientError extends Error {
@@ -240,18 +244,44 @@ class ApiClient {
         body: JSON.stringify(data),
       }),
     getDiscounts: (): Promise<Discount[]> => this.request<Discount[]>('/billing/discounts'),
+    createDiscount: (data: DiscountCreatePayload): Promise<Discount> =>
+      this.request<Discount>('/billing/discounts', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    updateDiscount: (id: number, data: Partial<DiscountCreatePayload>): Promise<Discount> =>
+      this.request<Discount>(`/billing/discounts/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
   };
 
   // Payments Endpoints (Member 4)
   payments = {
-    createPayment: (data: unknown): Promise<Payment> =>
+    getPayments: (): Promise<Payment[]> => this.request<Payment[]>('/payments/payments'),
+    getPayment: (id: number): Promise<Payment> =>
+      this.request<Payment>(`/payments/payments/${id}`),
+    createPayment: (data: PaymentCreatePayload): Promise<Payment> =>
       this.request<Payment>('/payments/payments', { method: 'POST', body: JSON.stringify(data) }),
+    refundPayment: (id: number, data: PaymentRefundPayload): Promise<Payment> =>
+      this.request<Payment>(`/payments/payments/${id}/refund`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
   };
 
   // Financial Reports Endpoints (Member 4)
   reports = {
     getMRR: (): Promise<MRRReport> => this.request<MRRReport>('/reports/mrr'),
-    getRevenue: (): Promise<RevenueReport> => this.request<RevenueReport>('/reports/revenue'),
+    getRevenue: (startDate?: string, endDate?: string): Promise<RevenueReport> => {
+      const params = new URLSearchParams();
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      const query = params.toString() ? `?${params.toString()}` : '';
+      return this.request<RevenueReport>(`/reports/revenue${query}`);
+    },
+    getSubscriptions: (): Promise<SubscriptionReport> =>
+      this.request<SubscriptionReport>('/reports/subscriptions'),
   };
 }
 

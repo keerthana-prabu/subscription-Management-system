@@ -7,34 +7,50 @@ import {
   Building,
   Calendar,
   DollarSign,
+  CreditCard,
+  Hash,
+  AlertCircle,
 } from 'lucide-react';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
+import { Input } from '../common/Input';
 import { Badge } from '../common/Badge';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { api, ApiClientError } from '../../api/client';
-import type { Invoice } from '../../api/types';
+import type { Invoice, Payment, PaymentCreatePayload, PaymentMethod } from '../../api/types';
 
 interface InvoiceDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   invoice: Invoice | null;
+  payments?: Payment[];
   onStatusChange: (updated: Invoice) => void;
+  onPaymentRecorded?: (payment: Payment, updatedInvoice: Invoice) => void;
 }
 
 export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
   isOpen,
   onClose,
   invoice,
+  payments = [],
   onStatusChange,
+  onPaymentRecorded,
 }) => {
   const { user } = useAuth();
   const { showToast } = useToast();
 
   const [isConfirmingVoid, setIsConfirmingVoid] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Partial / Full payment modal state
+  const [isPaymentFormOpen, setIsPaymentFormOpen] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState<number | ''>('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('bank_transfer');
+  const [transactionRef, setTransactionRef] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   if (!invoice) return null;
 
@@ -62,9 +78,21 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
     new Date(invoice.due_date).getTime() < Date.now() &&
     balanceDue > 0;
 
+  // Filter payment history for this invoice
+  const invoicePayments = payments.filter((p) => p.invoice_id === invoice.id);
+
   // Print invoice handler
   const handlePrint = () => {
     window.print();
+  };
+
+  // Open Payment Form
+  const handleOpenPaymentForm = () => {
+    setPaymentAmount(balanceDue);
+    setTransactionRef(`TXN-${Date.now().toString().slice(-6)}`);
+    setPaymentNotes(`Settlement remittance for invoice ${invoice.invoice_number}`);
+    setPaymentError(null);
+    setIsPaymentFormOpen(true);
   };
 
   // Confirm/Post invoice
@@ -110,21 +138,105 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
     }
   };
 
-  // Settle / Record payment
-  const handleRecordPayment = async () => {
+  // Settle / Record payment (Partial or Full)
+  const handleRecordPaymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPaymentError(null);
+
+    const payVal = Number(paymentAmount);
+    if (isNaN(payVal) || payVal <= 0) {
+      setPaymentError('Payment amount must be greater than $0.00.');
+      return;
+    }
+
+    if (payVal > balanceDue + 0.001) {
+      setPaymentError(
+        `Payment amount ($${payVal.toFixed(2)}) exceeds remaining invoice balance ($${balanceDue.toFixed(
+          2
+        )}). Overpayments are not supported.`
+      );
+      return;
+    }
+
+    if (!transactionRef.trim()) {
+      setPaymentError('A transaction reference is required for reconciliation.');
+      return;
+    }
+
     setIsProcessing(true);
+
+    const payload: PaymentCreatePayload = {
+      invoice_id: invoice.id,
+      amount: payVal,
+      currency: invoice.currency || 'USD',
+      payment_method: paymentMethod,
+      transaction_reference: transactionRef.trim(),
+      notes: paymentNotes.trim(),
+      payment_date: new Date().toISOString(),
+    };
+
     try {
+      const created = await api.payments.createPayment(payload);
+      const newPaid = amountPaid + payVal;
+      const isFull = newPaid >= totalAmount - 0.01;
+
       const updated: Invoice = {
         ...invoice,
-        status: 'paid',
-        amount_paid: invoice.total_amount,
-        paid_at: new Date().toISOString(),
+        amount_paid: newPaid.toFixed(2),
+        status: isFull ? 'paid' : 'posted',
+        paid_at: isFull ? new Date().toISOString() : invoice.paid_at,
         updated_at: new Date().toISOString(),
       };
-      showToast(`Payment recorded. Invoice ${invoice.invoice_number} is marked as PAID.`, 'success');
+
+      showToast(`Payment of $${payVal.toFixed(2)} recorded successfully!`, 'success');
+      onPaymentRecorded?.(created, updated);
       onStatusChange(updated);
-    } catch {
-      showToast('Failed to record payment', 'error');
+      setIsPaymentFormOpen(false);
+    } catch (err: unknown) {
+      if (err instanceof ApiClientError && err.status === 501) {
+        // Transparent 501 fallback
+        const localPayment: Payment = {
+          id: Date.now(),
+          invoice_id: invoice.id,
+          invoice_number: invoice.invoice_number,
+          customer_id: invoice.customer_id,
+          customer_name: invoice.customer_name,
+          customer_email: invoice.customer_email,
+          amount: payVal.toFixed(2),
+          currency: invoice.currency || 'USD',
+          status: 'succeeded',
+          payment_method: paymentMethod,
+          transaction_reference: transactionRef.trim(),
+          notes: paymentNotes.trim(),
+          paid_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        const newPaid = amountPaid + payVal;
+        const isFull = newPaid >= totalAmount - 0.01;
+
+        const updated: Invoice = {
+          ...invoice,
+          amount_paid: newPaid.toFixed(2),
+          status: isFull ? 'paid' : 'posted',
+          paid_at: isFull ? new Date().toISOString() : invoice.paid_at,
+          updated_at: new Date().toISOString(),
+        };
+
+        showToast(
+          `Payment of $${payVal.toFixed(
+            2
+          )} recorded (FastAPI POST /payments/payments returned 501 - Member 4 pending).`,
+          'info'
+        );
+        onPaymentRecorded?.(localPayment, updated);
+        onStatusChange(updated);
+        setIsPaymentFormOpen(false);
+      } else {
+        const msg = err instanceof Error ? err.message : 'Failed to record payment.';
+        setPaymentError(msg);
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -178,6 +290,8 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
                     <Badge variant="rose" label="OVERDUE" />
                   ) : invoice.status === 'paid' ? (
                     <Badge variant="emerald" label="PAID" />
+                  ) : amountPaid > 0 && balanceDue > 0 ? (
+                    <Badge variant="blue" label="PARTIALLY PAID" />
                   ) : invoice.status === 'posted' ? (
                     <Badge variant="blue" label="CONFIRMED / POSTED" />
                   ) : invoice.status === 'void' ? (
@@ -322,13 +436,8 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
 
               <div className="w-full sm:w-72 bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80 space-y-2.5 text-xs">
                 <div className="flex justify-between text-slate-600">
-                  <span>Net Line Subtotal:</span>
+                  <span>Gross Line Subtotal:</span>
                   <span className="font-mono font-medium">${subtotal.toFixed(2)}</span>
-                </div>
-
-                <div className="flex justify-between text-slate-600">
-                  <span>Regional Taxes (VAT/Sales):</span>
-                  <span className="font-mono font-medium text-indigo-700">+${taxTotal.toFixed(2)}</span>
                 </div>
 
                 {discountTotal > 0 && (
@@ -337,6 +446,11 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
                     <span className="font-mono">-${discountTotal.toFixed(2)}</span>
                   </div>
                 )}
+
+                <div className="flex justify-between text-slate-600">
+                  <span>Regional Taxes (VAT/Sales):</span>
+                  <span className="font-mono font-medium text-indigo-700">+${taxTotal.toFixed(2)}</span>
+                </div>
 
                 <div className="pt-2 border-t border-slate-200/80 flex justify-between items-baseline">
                   <span className="font-bold text-slate-900">Total Invoiced:</span>
@@ -364,6 +478,53 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Payment Settlement History */}
+            {invoicePayments.length > 0 && (
+              <div className="space-y-2 pt-3 border-t border-slate-200/80">
+                <div className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                  <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
+                  Recorded Payment Settlements ({invoicePayments.length})
+                </div>
+                <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                      <tr>
+                        <th className="py-2 px-3">Date</th>
+                        <th className="py-2 px-3">Transaction Ref</th>
+                        <th className="py-2 px-3">Method</th>
+                        <th className="py-2 px-3 text-right">Amount</th>
+                        <th className="py-2 px-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {invoicePayments.map((p) => (
+                        <tr key={p.id}>
+                          <td className="py-2.5 px-3 font-mono text-slate-600">
+                            {new Date(p.paid_at || p.created_at).toLocaleDateString()}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono font-bold text-slate-800">
+                            {p.transaction_reference || `TXN-${p.id}`}
+                          </td>
+                          <td className="py-2.5 px-3 capitalize text-slate-700">
+                            {p.payment_method.replace('_', ' ')}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-600">
+                            ${num(p.amount).toFixed(2)}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <Badge
+                              variant={p.status === 'succeeded' ? 'emerald' : p.status === 'refunded' ? 'rose' : 'amber'}
+                              label={p.status.toUpperCase()}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Action Bar (Screen Only - Hidden in Print) */}
@@ -388,12 +549,12 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
                 </Button>
               )}
 
-              {canManageInvoices && invoice.status === 'posted' && balanceDue > 0 && (
+              {canManageInvoices && invoice.status !== 'void' && balanceDue > 0 && (
                 <Button
                   type="button"
                   variant="primary"
                   size="sm"
-                  onClick={handleRecordPayment}
+                  onClick={handleOpenPaymentForm}
                   disabled={isProcessing}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white"
                 >
@@ -420,6 +581,108 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
             </div>
           </div>
         </div>
+      </Modal>
+
+      {/* Partial / Full Payment Recording Dialog */}
+      <Modal
+        isOpen={isPaymentFormOpen}
+        onClose={() => setIsPaymentFormOpen(false)}
+        title={`Record Payment for ${invoice.invoice_number}`}
+        description="Enter settlement details for full or partial invoice balance reconciliation."
+        maxWidth="md"
+      >
+        <form onSubmit={handleRecordPaymentSubmit} className="space-y-4 text-left">
+          {paymentError && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs">{paymentError}</div>}
+
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 flex items-center justify-between text-xs">
+            <div>
+              <span className="text-slate-400 block text-[10px] uppercase font-bold">Remaining Balance</span>
+              <span className="text-base font-black text-indigo-600 font-mono">${balanceDue.toFixed(2)}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[10px] uppercase font-bold">Total Invoiced</span>
+              <span className="text-xs font-bold text-slate-800 font-mono">${totalAmount.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-slate-700 flex items-center justify-between">
+              <span>Payment Amount ($) <span className="text-rose-500">*</span></span>
+              <button
+                type="button"
+                onClick={() => setPaymentAmount(balanceDue)}
+                className="text-[11px] text-indigo-600 hover:text-indigo-800 font-medium"
+              >
+                Pay Full Balance (${balanceDue.toFixed(2)})
+              </button>
+            </label>
+            <Input
+              type="number"
+              step="0.01"
+              min="0.01"
+              max={balanceDue}
+              value={paymentAmount}
+              onChange={(e) => setPaymentAmount(e.target.value === '' ? '' : parseFloat(e.target.value))}
+              placeholder="0.00"
+              disabled={isProcessing}
+              required
+              className="font-mono font-bold"
+            />
+            <p className="text-[11px] text-slate-400">Accepts partial payments up to ${balanceDue.toFixed(2)}.</p>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-slate-700">Payment Method <span className="text-rose-500">*</span></label>
+            <select
+              value={paymentMethod}
+              onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+              disabled={isProcessing}
+              className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition"
+            >
+              <option value="bank_transfer">Direct Bank Transfer / Wire / ACH</option>
+              <option value="credit_card">Corporate Credit Card Reference</option>
+              <option value="manual">Manual Settlement / Cash / Check</option>
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+              <Hash className="w-3.5 h-3.5 text-slate-400" />
+              Transaction Reference <span className="text-rose-500">*</span>
+            </label>
+            <Input
+              value={transactionRef}
+              onChange={(e) => setTransactionRef(e.target.value)}
+              placeholder="e.g. TXN-ACH-89421"
+              disabled={isProcessing}
+              required
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-slate-700">Settlement Notes</label>
+            <Input
+              value={paymentNotes}
+              onChange={(e) => setPaymentNotes(e.target.value)}
+              placeholder="Audit reconciliation notes..."
+              disabled={isProcessing}
+            />
+          </div>
+
+          <div className="flex items-start gap-1.5 p-2 rounded-xl bg-amber-50 border border-amber-200 text-[10px] text-amber-800">
+            <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+            <span>Overpayments are prevented. Status will update to PAID once balance reaches $0.00.</span>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+            <Button type="button" variant="secondary" size="sm" onClick={() => setIsPaymentFormOpen(false)} disabled={isProcessing}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="sm" disabled={isProcessing} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              {isProcessing ? 'Recording...' : 'Confirm Settlement'}
+            </Button>
+          </div>
+        </form>
       </Modal>
 
       {/* Confirmation Dialog for Voiding */}

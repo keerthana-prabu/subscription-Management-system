@@ -125,7 +125,7 @@ function MainLayout() {
               {currentTab === 'catalog' && <CatalogPage />}
               {currentTab === 'subscriptions' && <SubscriptionsPage />}
               {currentTab === 'billing' && <BillingPage />}
-              {currentTab === 'reports' && <ReportsPage />}
+              {currentTab === 'reports' && <ReportsPage onNavigate={setCurrentTab} />}
             </>
           )}
         </main>

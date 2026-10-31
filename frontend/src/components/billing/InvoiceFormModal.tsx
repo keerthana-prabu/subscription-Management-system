@@ -8,6 +8,8 @@ import {
   Tag,
   AlertCircle,
   FileSpreadsheet,
+  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
@@ -20,6 +22,7 @@ import type {
   InvoiceLineItemInput,
   Subscription,
   TaxRate,
+  Discount,
 } from '../../api/types';
 import { useToast } from '../../context/ToastContext';
 
@@ -36,6 +39,45 @@ const DEFAULT_CUSTOMERS: CustomerOption[] = [
   { id: 4, name: 'Brightloop Client Portal', email: 'customer@brightloop.io' },
 ];
 
+const DEFAULT_DISCOUNTS: Discount[] = [
+  {
+    id: 1,
+    code: 'SUMMER2026',
+    name: 'Summer Growth Promotion',
+    discount_type: 'percentage',
+    amount: 15,
+    min_purchase_amount: 100,
+    min_quantity: 1,
+    max_uses: 500,
+    usage_count: 142,
+    is_active: true,
+  },
+  {
+    id: 2,
+    code: 'WELCOME10',
+    name: 'New Client Onboarding Voucher',
+    discount_type: 'percentage',
+    amount: 10,
+    min_purchase_amount: 50,
+    min_quantity: 1,
+    max_uses: 200,
+    usage_count: 48,
+    is_active: true,
+  },
+  {
+    id: 3,
+    code: 'ENTERPRISE500',
+    name: 'Annual Corporate Credit',
+    discount_type: 'fixed_amount',
+    amount: 500,
+    min_purchase_amount: 1500,
+    min_quantity: 1,
+    max_uses: 50,
+    usage_count: 12,
+    is_active: true,
+  },
+];
+
 interface FormLineItem {
   id: string;
   description: string;
@@ -50,6 +92,7 @@ interface InvoiceFormModalProps {
   onSuccess: (newInvoice: Invoice) => void;
   availableSubscriptions: Subscription[];
   availableTaxes: TaxRate[];
+  availableDiscounts?: Discount[];
 }
 
 export const InvoiceFormModal: React.FC<InvoiceFormModalProps> = ({
@@ -58,8 +101,14 @@ export const InvoiceFormModal: React.FC<InvoiceFormModalProps> = ({
   onSuccess,
   availableSubscriptions,
   availableTaxes,
+  availableDiscounts = DEFAULT_DISCOUNTS,
 }) => {
   const { showToast } = useToast();
+
+  const num = (v: string | number | undefined): number => {
+    if (typeof v === 'number') return v;
+    return parseFloat(v || '0') || 0;
+  };
 
   // Form State
   const [selectedCustomerId, setSelectedCustomerId] = useState<number>(1);
@@ -68,8 +117,11 @@ export const InvoiceFormModal: React.FC<InvoiceFormModalProps> = ({
   const [dueDate, setDueDate] = useState<string>('');
   const currency = 'USD';
   const [paymentTerms, setPaymentTerms] = useState<string>('Net 30 Invoicing');
-  const [discountCode, setDiscountCode] = useState<string>('');
-  const [notes, setNotes] = useState<string>('Payment is due within invoice terms. Please direct inquiries to billing@brightloop.io.');
+  const [selectedDiscountCode, setSelectedDiscountCode] = useState<string>('');
+  const [customDiscountCode, setCustomDiscountCode] = useState<string>('');
+  const [notes, setNotes] = useState<string>(
+    'Payment is due within invoice terms. Please direct inquiries to billing@brightloop.io.'
+  );
 
   // Multi-line Items
   const [lineItems, setLineItems] = useState<FormLineItem[]>([
@@ -161,46 +213,110 @@ export const InvoiceFormModal: React.FC<InvoiceFormModalProps> = ({
     );
   };
 
-  // Real-time calculations
+  // Determine active discount rule
+  const activeDiscountRule = useMemo(() => {
+    const effectiveCode = selectedDiscountCode || customDiscountCode.trim().toUpperCase();
+    if (!effectiveCode) return null;
+    return availableDiscounts.find((d) => d.code.toUpperCase() === effectiveCode) || null;
+  }, [selectedDiscountCode, customDiscountCode, availableDiscounts]);
+
+  // Real-time calculations: Discount applied BEFORE TAX according to accounting standard
   const calculations = useMemo(() => {
-    let subtotal = 0;
+    let grossSubtotal = 0;
+    let totalQuantity = 0;
+
+    lineItems.forEach((item) => {
+      grossSubtotal += Math.max(0, item.quantity) * Math.max(0, item.unit_price);
+      totalQuantity += Math.max(0, item.quantity);
+    });
+
+    let discountTotal = 0;
+    let discountWarning: string | null = null;
+    let isEligible = false;
+
+    const effectiveCode = selectedDiscountCode || customDiscountCode.trim().toUpperCase();
+
+    if (activeDiscountRule) {
+      const isExpired =
+        activeDiscountRule.valid_until &&
+        new Date(activeDiscountRule.valid_until).getTime() < Date.now();
+      const isExhausted =
+        activeDiscountRule.max_uses !== undefined &&
+        activeDiscountRule.usage_count !== undefined &&
+        activeDiscountRule.usage_count >= activeDiscountRule.max_uses;
+
+      if (!activeDiscountRule.is_active) {
+        discountWarning = `Voucher ${activeDiscountRule.code} is currently deactivated.`;
+      } else if (isExpired) {
+        discountWarning = `Voucher ${activeDiscountRule.code} expired on ${new Date(
+          activeDiscountRule.valid_until!
+        ).toLocaleDateString()}.`;
+      } else if (isExhausted) {
+        discountWarning = `Voucher ${activeDiscountRule.code} has reached its maximum redemption limit.`;
+      } else if (
+        activeDiscountRule.min_purchase_amount &&
+        grossSubtotal < activeDiscountRule.min_purchase_amount
+      ) {
+        discountWarning = `Requires minimum spend of $${num(
+          activeDiscountRule.min_purchase_amount
+        ).toFixed(2)} (Current: $${grossSubtotal.toFixed(2)}).`;
+      } else if (
+        activeDiscountRule.min_quantity &&
+        totalQuantity < activeDiscountRule.min_quantity
+      ) {
+        discountWarning = `Requires at least ${activeDiscountRule.min_quantity} item(s) (Current: ${totalQuantity}).`;
+      } else {
+        isEligible = true;
+        const discountVal = num(activeDiscountRule.amount);
+        if (activeDiscountRule.discount_type === 'percentage') {
+          discountTotal = grossSubtotal * (discountVal / 100);
+        } else {
+          discountTotal = Math.min(grossSubtotal, discountVal);
+        }
+      }
+    } else if (effectiveCode) {
+      discountWarning = `Voucher code "${effectiveCode}" is not recognized or not available.`;
+    }
+
+    // Taxable base is gross subtotal minus discount before tax
+    const taxableSubtotal = Math.max(0, grossSubtotal - discountTotal);
+    const discountRatio = grossSubtotal > 0 ? taxableSubtotal / grossSubtotal : 1;
+
     let taxTotal = 0;
-
     const computedLines = lineItems.map((item) => {
-      const lineSubtotal = Math.max(0, item.quantity) * Math.max(0, item.unit_price);
-      subtotal += lineSubtotal;
-
+      const lineSub = Math.max(0, item.quantity) * Math.max(0, item.unit_price);
       const taxObj = availableTaxes.find((t) => t.id === item.tax_rate_id);
       const ratePct = taxObj ? parseFloat(String(taxObj.rate_percentage)) || 0 : 0;
-      const lineTax = lineSubtotal * (ratePct / 100);
+
+      // Tax computed on discounted taxable proportion
+      const lineTaxable = lineSub * discountRatio;
+      const lineTax = lineTaxable * (ratePct / 100);
       taxTotal += lineTax;
 
       return {
         ...item,
-        lineSubtotal,
+        lineSubtotal: lineSub,
         ratePct,
         lineTax,
-        lineTotal: lineSubtotal + lineTax,
+        lineTotal: lineSub + lineTax,
       };
     });
 
-    let discountTotal = 0;
-    if (discountCode.trim().toUpperCase() === 'SUMMER2026') {
-      discountTotal = subtotal * 0.15; // 15% discount coupon
-    } else if (discountCode.trim().toUpperCase() === 'WELCOME10') {
-      discountTotal = subtotal * 0.10;
-    }
-
-    const totalAmount = Math.max(0, subtotal + taxTotal - discountTotal);
+    const totalAmount = Math.max(0, taxableSubtotal + taxTotal);
 
     return {
-      subtotal,
-      taxTotal,
+      grossSubtotal,
       discountTotal,
+      taxableSubtotal,
+      taxTotal,
       totalAmount,
+      totalQuantity,
+      discountWarning,
+      isEligible,
       computedLines,
+      effectiveCode,
     };
-  }, [lineItems, availableTaxes, discountCode]);
+  }, [lineItems, availableTaxes, activeDiscountRule, selectedDiscountCode, customDiscountCode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -246,13 +362,15 @@ export const InvoiceFormModal: React.FC<InvoiceFormModalProps> = ({
       tax_rate_id: item.tax_rate_id ? Number(item.tax_rate_id) : null,
     }));
 
+    const finalDiscountCode = calculations.isEligible ? calculations.effectiveCode : null;
+
     const payload: InvoiceCreatePayload = {
       customer_id: selectedCustomerId,
       subscription_id: selectedSubscriptionId ? Number(selectedSubscriptionId) : null,
       currency,
       due_date: new Date(dueDate).toISOString(),
       items: itemsPayload,
-      discount_code: discountCode.trim() || null,
+      discount_code: finalDiscountCode,
       customer_name: selectedCust?.name,
       customer_email: selectedCust?.email,
       payment_terms: paymentTerms,
@@ -268,7 +386,7 @@ export const InvoiceFormModal: React.FC<InvoiceFormModalProps> = ({
       onClose();
     } catch (err: unknown) {
       if (err instanceof ApiClientError && err.status === 501) {
-        // Honest 501 handling: create transparent preview invoice
+        // Honest 501 handling
         const randomNum = Math.floor(1000 + Math.random() * 9000);
         const invoiceNum = `INV-2026-${randomNum}`;
         const previewInvoice: Invoice = {
@@ -281,7 +399,7 @@ export const InvoiceFormModal: React.FC<InvoiceFormModalProps> = ({
           subscription_number: selectedSub?.subscription_number,
           status: 'draft',
           currency,
-          subtotal: calculations.subtotal.toFixed(2),
+          subtotal: calculations.grossSubtotal.toFixed(2),
           discount_total: calculations.discountTotal.toFixed(2),
           tax_total: calculations.taxTotal.toFixed(2),
           total_amount: calculations.totalAmount.toFixed(2),
@@ -306,7 +424,7 @@ export const InvoiceFormModal: React.FC<InvoiceFormModalProps> = ({
         };
 
         showToast(
-          'Invoice created in workspace (FastAPI POST /billing/invoices returned 501 - Member 3 pending).',
+          'Invoice generated in workspace (FastAPI POST /billing/invoices returned 501 - Member 3 pending).',
           'info'
         );
         onSuccess(previewInvoice);
@@ -558,26 +676,66 @@ export const InvoiceFormModal: React.FC<InvoiceFormModalProps> = ({
           </div>
         </div>
 
-        {/* Section 4: Discount & Financial Summary */}
+        {/* Section 4: Discount Selection & Financial Calculations Preview */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 pt-2">
-          {/* Notes & Discount Code */}
+          {/* Discount Rules Picker & Notes */}
           <div className="space-y-3">
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                <Tag className="w-3.5 h-3.5 text-slate-400" />
-                Discount Code
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-700 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Tag className="w-3.5 h-3.5 text-indigo-600" />
+                  Discount Voucher Rule
+                </span>
+                {calculations.isEligible && (
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> Eligible
+                  </span>
+                )}
               </label>
-              <div className="flex gap-2">
+
+              {/* Selector from available discounts */}
+              <select
+                value={selectedDiscountCode}
+                onChange={(e) => {
+                  setSelectedDiscountCode(e.target.value);
+                  if (e.target.value) setCustomDiscountCode('');
+                }}
+                disabled={isSubmitting}
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition"
+              >
+                <option value="">No Discount Applied</option>
+                {availableDiscounts.map((disc) => (
+                  <option key={disc.id} value={disc.code}>
+                    {disc.code} — {disc.name || 'Promo'} (
+                    {disc.discount_type === 'percentage'
+                      ? `${num(disc.amount)}% off`
+                      : `$${num(disc.amount).toFixed(2)} off`}
+                    )
+                  </option>
+                ))}
+              </select>
+
+              {/* Or manual custom discount entry */}
+              <div className="pt-1">
                 <Input
-                  value={discountCode}
-                  onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
-                  placeholder="e.g. SUMMER2026, WELCOME10"
+                  value={customDiscountCode}
+                  onChange={(e) => {
+                    setCustomDiscountCode(e.target.value.toUpperCase());
+                    if (e.target.value) setSelectedDiscountCode('');
+                  }}
+                  placeholder="Or enter custom discount code..."
                   disabled={isSubmitting}
+                  className="text-xs font-mono uppercase"
                 />
               </div>
-              <p className="text-[11px] text-slate-400">
-                Active coupons apply instant deduction to the invoice net subtotal.
-              </p>
+
+              {/* Warning/Alert for eligibility */}
+              {calculations.discountWarning && (
+                <div className="flex items-start gap-1.5 p-2 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                  <span>{calculations.discountWarning}</span>
+                </div>
+              )}
             </div>
 
             <div className="space-y-1">
@@ -594,30 +752,35 @@ export const InvoiceFormModal: React.FC<InvoiceFormModalProps> = ({
             </div>
           </div>
 
-          {/* Calculations Summary Card */}
+          {/* Calculations Summary Card (Before-Tax Breakdown) */}
           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-2.5">
             <div className="text-xs font-bold text-slate-800 uppercase tracking-wider pb-1 border-b border-slate-200/60">
-              Live Financial Preview
+              Authoritative Financial Breakdown Preview
             </div>
 
             <div className="flex justify-between text-xs text-slate-600">
-              <span>Net Line Subtotal:</span>
-              <span className="font-mono font-medium">${calculations.subtotal.toFixed(2)}</span>
+              <span>Gross Line Subtotal:</span>
+              <span className="font-mono font-medium">${calculations.grossSubtotal.toFixed(2)}</span>
+            </div>
+
+            {calculations.discountTotal > 0 && (
+              <div className="flex justify-between text-xs text-emerald-600 font-semibold">
+                <span>Promotional Discount (Before Tax):</span>
+                <span className="font-mono">-${calculations.discountTotal.toFixed(2)}</span>
+              </div>
+            )}
+
+            <div className="flex justify-between text-xs text-slate-700 pt-1 border-t border-dashed border-slate-200">
+              <span className="font-medium">Taxable Base Amount:</span>
+              <span className="font-mono font-bold">${calculations.taxableSubtotal.toFixed(2)}</span>
             </div>
 
             <div className="flex justify-between text-xs text-slate-600">
-              <span>Regional Taxes:</span>
+              <span>Regional Taxes (VAT/Sales):</span>
               <span className="font-mono font-medium text-indigo-700">
                 +${calculations.taxTotal.toFixed(2)}
               </span>
             </div>
-
-            {calculations.discountTotal > 0 && (
-              <div className="flex justify-between text-xs text-emerald-600 font-medium">
-                <span>Promotional Discount:</span>
-                <span className="font-mono">-${calculations.discountTotal.toFixed(2)}</span>
-              </div>
-            )}
 
             <div className="pt-2 border-t border-slate-200 flex justify-between items-baseline">
               <span className="text-xs font-bold text-slate-900">Total Invoice Amount:</span>
@@ -628,7 +791,9 @@ export const InvoiceFormModal: React.FC<InvoiceFormModalProps> = ({
 
             <div className="flex items-center gap-1.5 text-[10px] text-slate-500 pt-1">
               <AlertCircle className="w-3 h-3 text-slate-400 shrink-0" />
-              <span>Final financial total will be validated by FastAPI billing backend.</span>
+              <span>
+                Discounts apply before tax. Final totals are strictly validated by backend contracts.
+              </span>
             </div>
           </div>
         </div>

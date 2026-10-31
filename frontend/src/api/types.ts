@@ -348,13 +348,33 @@ export interface TaxRateCreatePayload {
 export interface Discount {
   id: number;
   code: string;
+  name?: string;
   discount_type: DiscountType;
   amount: string | number;
+  min_purchase_amount?: number;
+  min_quantity?: number;
   valid_from?: string;
   valid_until?: string;
+  max_uses?: number;
+  usage_count?: number;
+  applies_to?: 'all' | 'products' | 'subscriptions';
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface DiscountCreatePayload {
+  code: string;
+  name?: string;
+  discount_type: DiscountType;
+  amount: number;
+  min_purchase_amount?: number;
+  min_quantity?: number;
+  valid_from?: string | null;
+  valid_until?: string | null;
+  max_uses?: number | null;
+  applies_to?: 'all' | 'products' | 'subscriptions';
+  is_active?: boolean;
 }
 
 export interface InvoiceLineItem {
@@ -420,40 +440,72 @@ export type PaymentMethod = 'credit_card' | 'bank_transfer' | 'manual';
 export interface Payment {
   id: number;
   invoice_id: number;
-  amount: string;
+  invoice_number?: string;
+  customer_id?: number;
+  customer_name?: string;
+  customer_email?: string;
+  amount: string | number;
   currency: string;
   status: PaymentStatus;
   payment_method: PaymentMethod;
   transaction_reference?: string;
   failure_reason?: string;
+  notes?: string;
   paid_at?: string;
   refunded_at?: string;
   created_at: string;
   updated_at: string;
 }
 
+export interface PaymentCreatePayload {
+  invoice_id: number;
+  amount: number;
+  currency?: string;
+  payment_method: PaymentMethod;
+  transaction_reference?: string;
+  notes?: string;
+  payment_date?: string;
+}
+
+export interface PaymentRefundPayload {
+  reason: string;
+}
+
+export interface SubscriptionStatusCount {
+  status: string;
+  count: number;
+}
+
+export interface SubscriptionReport {
+  total_count: number;
+  by_status: SubscriptionStatusCount[];
+  by_plan: Record<string, number>;
+}
+
 export interface MRRReport {
-  total_mrr: string;
-  arr: string;
+  total_mrr: string | number;
+  arr: string | number;
   currency: string;
   active_subscriptions: number;
-  churn_rate_percentage: string;
+  churn_rate_percentage: string | number;
+}
+
+export interface RevenueTimeSeriesPoint {
+  period: string;
+  gross_revenue: string | number;
+  net_revenue: string | number;
+  tax_collected: string | number;
+  discounts_given: string | number;
+  currency: string;
 }
 
 export interface RevenueReport {
   start_date: string;
   end_date: string;
   currency: string;
-  total_gross_revenue: string;
-  total_net_revenue: string;
-  total_tax_collected: string;
-  total_refunds: string;
-  breakdown_by_period: Array<{
-    period: string;
-    gross_revenue: string;
-    net_revenue: string;
-    tax_collected: string;
-    discounts_given: string;
-    currency: string;
-  }>;
+  total_gross_revenue: string | number;
+  total_net_revenue: string | number;
+  total_tax_collected: string | number;
+  total_refunds: string | number;
+  breakdown_by_period: RevenueTimeSeriesPoint[];
 }

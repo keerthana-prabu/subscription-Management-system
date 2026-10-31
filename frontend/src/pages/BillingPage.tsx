@@ -17,9 +17,13 @@ import {
   Eye,
   Printer,
   Sparkles,
+  CreditCard,
+  Tag,
+  Hash,
+  RotateCcw,
 } from 'lucide-react';
 import { api, ApiClientError } from '../api/client';
-import type { Invoice, Subscription, TaxRate } from '../api/types';
+import type { Invoice, Subscription, TaxRate, Payment, Discount } from '../api/types';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { Button } from '../components/common/Button';
@@ -30,6 +34,10 @@ import { TableSkeleton } from '../components/common/Skeleton';
 import { InvoiceFormModal } from '../components/billing/InvoiceFormModal';
 import { InvoiceDetailModal } from '../components/billing/InvoiceDetailModal';
 import { TaxRuleModal } from '../components/billing/TaxRuleModal';
+import { PaymentFormModal } from '../components/payments/PaymentFormModal';
+import { PaymentDetailModal } from '../components/payments/PaymentDetailModal';
+import { DiscountFormModal } from '../components/discounts/DiscountFormModal';
+import { DiscountDetailModal } from '../components/discounts/DiscountDetailModal';
 
 const INITIAL_TAX_RATES: TaxRate[] = [
   {
@@ -64,6 +72,77 @@ const INITIAL_TAX_RATES: TaxRate[] = [
     name: 'Zero-Rated International Export',
     rate_percentage: 0.0,
     country: 'US',
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+];
+
+const INITIAL_DISCOUNTS: Discount[] = [
+  {
+    id: 1,
+    code: 'SUMMER2026',
+    name: 'Summer Growth Promotion',
+    discount_type: 'percentage',
+    amount: 15,
+    min_purchase_amount: 100,
+    min_quantity: 1,
+    valid_from: '2026-06-01T00:00:00Z',
+    valid_until: '2026-12-31T00:00:00Z',
+    max_uses: 500,
+    usage_count: 142,
+    applies_to: 'all',
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 2,
+    code: 'WELCOME10',
+    name: 'New Client Onboarding Voucher',
+    discount_type: 'percentage',
+    amount: 10,
+    min_purchase_amount: 50,
+    min_quantity: 1,
+    valid_from: '2026-01-01T00:00:00Z',
+    valid_until: '2026-12-31T00:00:00Z',
+    max_uses: 200,
+    usage_count: 48,
+    applies_to: 'subscriptions',
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 3,
+    code: 'ENTERPRISE500',
+    name: 'Annual Corporate Credit',
+    discount_type: 'fixed_amount',
+    amount: 500,
+    min_purchase_amount: 1500,
+    min_quantity: 1,
+    valid_from: '2026-01-01T00:00:00Z',
+    valid_until: '2026-12-31T00:00:00Z',
+    max_uses: 50,
+    usage_count: 12,
+    applies_to: 'subscriptions',
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 4,
+    code: 'VIP25',
+    name: 'Partner Executive Tier Voucher',
+    discount_type: 'percentage',
+    amount: 25,
+    min_purchase_amount: 250,
+    min_quantity: 2,
+    valid_from: '2026-03-01T00:00:00Z',
+    valid_until: '2026-11-30T00:00:00Z',
+    max_uses: 20,
+    usage_count: 7,
+    applies_to: 'all',
     is_active: true,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -268,10 +347,10 @@ const INITIAL_INVOICES: Invoice[] = [
     discount_total: '0.00',
     tax_total: '189.90',
     total_amount: '2088.90',
-    amount_paid: '0.00',
+    amount_paid: '500.00', // Partially paid!
     due_date: '2026-11-15T00:00:00Z',
     payment_terms: 'Net 30 Invoicing',
-    notes: 'Annual tier commitment for Gotham regional office.',
+    notes: 'Annual tier commitment. First installment of $500 received.',
     items: [
       {
         id: 2,
@@ -287,7 +366,7 @@ const INITIAL_INVOICES: Invoice[] = [
       },
     ],
     created_at: '2026-10-15T09:30:00Z',
-    updated_at: '2026-10-15T09:30:00Z',
+    updated_at: '2026-10-16T10:00:00Z',
   },
   {
     id: 3,
@@ -297,14 +376,14 @@ const INITIAL_INVOICES: Invoice[] = [
     customer_email: 'accounts@cyberdyne.io',
     subscription_id: 3,
     subscription_number: 'SUB-2026-0044',
-    status: 'posted', // Due date is in the past -> evaluated as OVERDUE
+    status: 'posted', // Past due date -> OVERDUE
     currency: 'USD',
     subtotal: '49.00',
     discount_total: '0.00',
     tax_total: '4.90',
     total_amount: '53.90',
     amount_paid: '0.00',
-    due_date: '2026-10-10T00:00:00Z', // past due date
+    due_date: '2026-10-10T00:00:00Z',
     payment_terms: 'Due Upon Receipt',
     notes: 'Pilot evaluation week #1. Remittance overdue.',
     items: [
@@ -395,6 +474,60 @@ const INITIAL_INVOICES: Invoice[] = [
   },
 ];
 
+const INITIAL_PAYMENTS: Payment[] = [
+  {
+    id: 1,
+    invoice_id: 1,
+    invoice_number: 'INV-2026-0001',
+    customer_id: 1,
+    customer_name: 'Acme Corporation',
+    customer_email: 'billing@acme.com',
+    amount: '218.90',
+    currency: 'USD',
+    status: 'succeeded',
+    payment_method: 'bank_transfer',
+    transaction_reference: 'TXN-ACH-88493',
+    notes: 'Full settlement via corporate ACH wire transfer.',
+    paid_at: '2026-10-15T14:30:00Z',
+    created_at: '2026-10-15T14:30:00Z',
+    updated_at: '2026-10-15T14:30:00Z',
+  },
+  {
+    id: 2,
+    invoice_id: 2,
+    invoice_number: 'INV-2026-0002',
+    customer_id: 2,
+    customer_name: 'Wayne Enterprises',
+    customer_email: 'finance@wayne.com',
+    amount: '500.00',
+    currency: 'USD',
+    status: 'succeeded',
+    payment_method: 'bank_transfer',
+    transaction_reference: 'TXN-WIRE-44912',
+    notes: 'Initial partial installment for annual enterprise license.',
+    paid_at: '2026-10-16T10:00:00Z',
+    created_at: '2026-10-16T10:00:00Z',
+    updated_at: '2026-10-16T10:00:00Z',
+  },
+  {
+    id: 3,
+    invoice_id: 4,
+    invoice_number: 'INV-2026-0004',
+    customer_id: 4,
+    customer_name: 'Brightloop Client Portal',
+    customer_email: 'customer@brightloop.io',
+    amount: '218.90',
+    currency: 'USD',
+    status: 'succeeded',
+    payment_method: 'credit_card',
+    transaction_reference: 'TXN-CARD-99214',
+    notes: 'Automated recurring billing card settlement.',
+    paid_at: '2026-10-05T11:00:00Z',
+    created_at: '2026-10-05T11:00:00Z',
+    updated_at: '2026-10-05T11:00:00Z',
+  },
+];
+
 export const BillingPage: React.FC = () => {
   const { user } = useAuth();
   const { showToast } = useToast();
@@ -405,36 +538,57 @@ export const BillingPage: React.FC = () => {
   const canManageBilling = (isAdmin || isFinance) && !isCustomer;
 
   // View Tabs
-  const [activeTab, setActiveTab] = useState<'invoices' | 'recurring' | 'taxes'>('invoices');
+  const [activeTab, setActiveTab] = useState<'invoices' | 'payments' | 'recurring' | 'discounts' | 'taxes'>('invoices');
 
   // State
   const [invoices, setInvoices] = useState<Invoice[]>(INITIAL_INVOICES);
+  const [payments, setPayments] = useState<Payment[]>(INITIAL_PAYMENTS);
+  const [discounts, setDiscounts] = useState<Discount[]>(INITIAL_DISCOUNTS);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>(INITIAL_SUBSCRIPTIONS);
   const [taxRates, setTaxRates] = useState<TaxRate[]>(INITIAL_TAX_RATES);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [backendIntegrationPending, setBackendIntegrationPending] = useState<boolean>(false);
 
-  // Filters & Controls
+  // Invoices Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [dueDateFilter, setDueDateFilter] = useState<string>('all');
+
+  // Payments Filters
+  const [paymentSearch, setPaymentSearch] = useState('');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>('all');
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('all');
+
+  // Discounts Filters
+  const [discountSearch, setDiscountSearch] = useState('');
+
+  // Recurring Billing Filter
   const [cadenceFilter, setCadenceFilter] = useState<string>('all');
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 5;
 
-  // Modals
+  // Modals State
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [selectedInvoiceForDetail, setSelectedInvoiceForDetail] = useState<Invoice | null>(null);
   const [isTaxModalOpen, setIsTaxModalOpen] = useState(false);
 
-  // Helper number parser
+  const [isPaymentFormOpen, setIsPaymentFormOpen] = useState(false);
+  const [invoiceToPay, setInvoiceToPay] = useState<Invoice | null>(null);
+  const [selectedPaymentForDetail, setSelectedPaymentForDetail] = useState<Payment | null>(null);
+
+  const [isDiscountModalOpen, setIsDiscountModalOpen] = useState(false);
+  const [discountToEdit, setDiscountToEdit] = useState<Discount | null>(null);
+  const [selectedDiscountForDetail, setSelectedDiscountForDetail] = useState<Discount | null>(null);
+
+  // Numerical helper
   const num = (v: string | number | undefined): number => {
     if (typeof v === 'number') return v;
     return parseFloat(v || '0') || 0;
   };
 
-  // Fetch data
+  // Fetch initial data
   const fetchData = async () => {
     setIsLoading(true);
     try {
@@ -449,7 +603,29 @@ export const BillingPage: React.FC = () => {
         setInvoices(remoteInvoices);
       }
 
-      // 2. Fetch Taxes
+      // 2. Fetch Payments
+      const remotePayments = await api.payments.getPayments().catch((err) => {
+        if (err instanceof ApiClientError && err.status === 501) {
+          setBackendIntegrationPending(true);
+        }
+        return [];
+      });
+      if (Array.isArray(remotePayments) && remotePayments.length > 0) {
+        setPayments(remotePayments);
+      }
+
+      // 3. Fetch Discounts
+      const remoteDiscounts = await api.billing.getDiscounts().catch((err) => {
+        if (err instanceof ApiClientError && err.status === 501) {
+          setBackendIntegrationPending(true);
+        }
+        return [];
+      });
+      if (Array.isArray(remoteDiscounts) && remoteDiscounts.length > 0) {
+        setDiscounts(remoteDiscounts);
+      }
+
+      // 4. Fetch Taxes
       const remoteTaxes = await api.billing.getTaxes().catch((err) => {
         if (err instanceof ApiClientError && err.status === 501) {
           setBackendIntegrationPending(true);
@@ -460,13 +636,13 @@ export const BillingPage: React.FC = () => {
         setTaxRates(remoteTaxes);
       }
 
-      // 3. Fetch Subscriptions for recurring billing tab
+      // 5. Fetch Subscriptions
       const remoteSubs = await api.subscriptions.getSubscriptions().catch(() => []);
       if (Array.isArray(remoteSubs) && remoteSubs.length > 0) {
         setSubscriptions(remoteSubs);
       }
     } catch {
-      // Graceful fallback to initial data
+      // Graceful fallback
     } finally {
       setIsLoading(false);
     }
@@ -484,18 +660,34 @@ export const BillingPage: React.FC = () => {
         (inv) =>
           inv.customer_id === user.id ||
           (user.email && inv.customer_email?.toLowerCase() === user.email.toLowerCase()) ||
-          inv.customer_id === 4 // Matches test customer portal account
+          inv.customer_id === 4
       );
     }
     return list;
   }, [invoices, isCustomer, user]);
 
-  // Derived financial KPI calculations
+  // Filter payments for Customer role isolation
+  const visiblePayments = useMemo(() => {
+    let list = payments;
+    if (isCustomer && user) {
+      list = list.filter(
+        (p) =>
+          p.customer_id === user.id ||
+          (user.email && p.customer_email?.toLowerCase() === user.email.toLowerCase()) ||
+          p.customer_id === 4
+      );
+    }
+    return list;
+  }, [payments, isCustomer, user]);
+
+  // Derived financial KPI calculations (Task 5)
   const kpis = useMemo(() => {
     let totalInvoiced = 0;
     let totalPaid = 0;
     let totalOutstanding = 0;
     let totalOverdue = 0;
+    let fullyPaidCount = 0;
+    let partiallyPaidCount = 0;
     let overdueCount = 0;
 
     visibleInvoices.forEach((inv) => {
@@ -506,11 +698,17 @@ export const BillingPage: React.FC = () => {
       if (inv.status !== 'void') {
         totalInvoiced += tot;
         totalPaid += paid;
-        if (inv.status !== 'draft') {
+
+        if (inv.status === 'paid' || (tot > 0 && paid >= tot - 0.01)) {
+          fullyPaidCount++;
+        } else if (paid > 0 && balance > 0) {
+          partiallyPaidCount++;
+          totalOutstanding += balance;
+        } else if (inv.status !== 'draft') {
           totalOutstanding += balance;
         }
 
-        // Overdue condition
+        // Overdue condition: posted, past due, unpaid balance > 0
         if (inv.status === 'posted' && new Date(inv.due_date).getTime() < Date.now() && balance > 0) {
           totalOverdue += balance;
           overdueCount++;
@@ -523,6 +721,8 @@ export const BillingPage: React.FC = () => {
       totalPaid,
       totalOutstanding,
       totalOverdue,
+      fullyPaidCount,
+      partiallyPaidCount,
       overdueCount,
     };
   }, [visibleInvoices]);
@@ -530,15 +730,30 @@ export const BillingPage: React.FC = () => {
   // Filtered Invoices Table
   const filteredInvoices = useMemo(() => {
     return visibleInvoices.filter((inv) => {
-      // Status filter
-      const balance = Math.max(0, num(inv.total_amount) - num(inv.amount_paid));
-      const isOverdue =
+      const tot = num(inv.total_amount);
+      const paid = num(inv.amount_paid);
+      const balance = Math.max(0, tot - paid);
+      const isPastDue =
         inv.status === 'posted' && new Date(inv.due_date).getTime() < Date.now() && balance > 0;
+      const isPartial = paid > 0 && balance > 0;
 
-      if (statusFilter === 'overdue' && !isOverdue) return false;
-      if (statusFilter === 'posted' && (inv.status !== 'posted' || isOverdue)) return false;
-      if (statusFilter !== 'all' && statusFilter !== 'overdue' && inv.status !== statusFilter) {
-        return false;
+      // Status filter
+      if (statusFilter === 'overdue' && !isPastDue) return false;
+      if (statusFilter === 'partial' && !isPartial) return false;
+      if (statusFilter === 'posted' && (inv.status !== 'posted' || isPastDue || isPartial)) return false;
+      if (statusFilter === 'paid' && inv.status !== 'paid') return false;
+      if (statusFilter === 'draft' && inv.status !== 'draft') return false;
+      if (statusFilter === 'void' && inv.status !== 'void') return false;
+
+      // Due date filter
+      if (dueDateFilter !== 'all') {
+        const now = Date.now();
+        const due = new Date(inv.due_date).getTime();
+        const daysDiff = (due - now) / (1000 * 3600 * 24);
+
+        if (dueDateFilter === 'overdue' && !isPastDue) return false;
+        if (dueDateFilter === 'next7' && (daysDiff < 0 || daysDiff > 7)) return false;
+        if (dueDateFilter === 'next30' && (daysDiff < 0 || daysDiff > 30)) return false;
       }
 
       // Search filter
@@ -554,9 +769,42 @@ export const BillingPage: React.FC = () => {
 
       return true;
     });
-  }, [visibleInvoices, statusFilter, searchQuery]);
+  }, [visibleInvoices, statusFilter, dueDateFilter, searchQuery]);
 
-  // Pagination calculations
+  // Filtered Payments Table
+  const filteredPayments = useMemo(() => {
+    return visiblePayments.filter((p) => {
+      if (paymentStatusFilter !== 'all' && p.status !== paymentStatusFilter) return false;
+      if (paymentMethodFilter !== 'all' && p.payment_method !== paymentMethodFilter) return false;
+
+      if (paymentSearch.trim()) {
+        const q = paymentSearch.toLowerCase();
+        const matchesRef = p.transaction_reference?.toLowerCase().includes(q);
+        const matchesInv = p.invoice_number?.toLowerCase().includes(q);
+        const matchesCust =
+          p.customer_name?.toLowerCase().includes(q) ||
+          p.customer_email?.toLowerCase().includes(q);
+        if (!matchesRef && !matchesInv && !matchesCust) return false;
+      }
+
+      return true;
+    });
+  }, [visiblePayments, paymentStatusFilter, paymentMethodFilter, paymentSearch]);
+
+  // Filtered Discounts Table
+  const filteredDiscounts = useMemo(() => {
+    return discounts.filter((d) => {
+      if (discountSearch.trim()) {
+        const q = discountSearch.toLowerCase();
+        const matchesCode = d.code.toLowerCase().includes(q);
+        const matchesName = d.name?.toLowerCase().includes(q);
+        if (!matchesCode && !matchesName) return false;
+      }
+      return true;
+    });
+  }, [discounts, discountSearch]);
+
+  // Pagination calculations for Invoices
   const totalPages = Math.ceil(filteredInvoices.length / pageSize) || 1;
   const paginatedInvoices = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
@@ -599,14 +847,14 @@ export const BillingPage: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-black text-slate-900 tracking-tight">
-                Invoicing & Recurring Billing Ledger
+                Billing, Payments & Discounts Ledger
               </h2>
-              <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
-                Phase 4 Complete
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                Phase 5 Active
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Automated invoice state progression, regional tax calculation, recurring schedules, and print-ready PDF statements.
+              Comprehensive double-entry invoice management, promotional discount rules, partial payment reconciliation, and audit logs.
             </p>
           </div>
         </div>
@@ -623,10 +871,13 @@ export const BillingPage: React.FC = () => {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setIsTaxModalOpen(true)}
+                onClick={() => {
+                  setInvoiceToPay(null);
+                  setIsPaymentFormOpen(true);
+                }}
               >
-                <Percent className="w-3.5 h-3.5 mr-1.5" />
-                Configure Taxes
+                <DollarSign className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
+                Record Payment
               </Button>
 
               <Button
@@ -649,13 +900,13 @@ export const BillingPage: React.FC = () => {
           <div className="space-y-1">
             <p className="font-bold text-amber-950">FastAPI Backend Integration Notice</p>
             <p className="text-amber-800 leading-relaxed">
-              FastAPI Member 3 billing routes (<code className="bg-amber-100/80 px-1 py-0.5 rounded font-mono">/api/v1/billing/invoices</code>, <code className="bg-amber-100/80 px-1 py-0.5 rounded font-mono">/api/v1/billing/taxes</code>) returned HTTP 501 Not Implemented. Showing interactive authenticated workspace preview adhering to all schema and state transition contracts.
+              FastAPI Member 3 & Member 4 endpoints (<code className="bg-amber-100/80 px-1 py-0.5 rounded font-mono">/billing/invoices</code>, <code className="bg-amber-100/80 px-1 py-0.5 rounded font-mono">/payments/payments</code>, <code className="bg-amber-100/80 px-1 py-0.5 rounded font-mono">/billing/discounts</code>) returned HTTP 501 Not Implemented. Showing interactive workspace preview adhering strictly to all API contracts and reconciliation rules.
             </p>
           </div>
         </div>
       )}
 
-      {/* Financial KPI Summary Cards */}
+      {/* Financial KPI Summary Cards (Task 5) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Invoiced */}
         <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-2xs space-y-2">
@@ -673,7 +924,7 @@ export const BillingPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Collected / Paid */}
+        {/* Settled / Paid */}
         <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-2xs space-y-2">
           <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
             <span>Settled / Paid</span>
@@ -684,8 +935,8 @@ export const BillingPage: React.FC = () => {
           <div className="text-2xl font-black text-emerald-600 font-mono tracking-tight">
             ${kpis.totalPaid.toFixed(2)}
           </div>
-          <div className="text-[11px] text-emerald-700">
-            Settled via customer portal and ACH
+          <div className="text-[11px] text-emerald-700 font-medium">
+            {kpis.fullyPaidCount} fully settled &bull; {payments.length} transactions
           </div>
         </div>
 
@@ -700,8 +951,8 @@ export const BillingPage: React.FC = () => {
           <div className="text-2xl font-black text-indigo-600 font-mono tracking-tight">
             ${kpis.totalOutstanding.toFixed(2)}
           </div>
-          <div className="text-[11px] text-indigo-700">
-            Awaiting remittance within invoice terms
+          <div className="text-[11px] text-indigo-700 font-medium">
+            {kpis.partiallyPaidCount} partially settled invoices open
           </div>
         </div>
 
@@ -717,16 +968,16 @@ export const BillingPage: React.FC = () => {
             ${kpis.totalOverdue.toFixed(2)}
           </div>
           <div className="text-[11px] text-rose-700 font-medium">
-            {kpis.overdueCount} {kpis.overdueCount === 1 ? 'invoice' : 'invoices'} exceeding due date
+            {kpis.overdueCount} {kpis.overdueCount === 1 ? 'invoice' : 'invoices'} exceeding due terms
           </div>
         </div>
       </div>
 
       {/* Main Multi-Tab Navigation */}
-      <div className="flex border-b border-slate-200/80 gap-6 text-sm font-semibold text-slate-600">
+      <div className="flex border-b border-slate-200/80 gap-6 text-sm font-semibold text-slate-600 overflow-x-auto">
         <button
           onClick={() => setActiveTab('invoices')}
-          className={`pb-3 px-1 border-b-2 flex items-center gap-2 transition-colors ${
+          className={`pb-3 px-1 border-b-2 flex items-center gap-2 shrink-0 transition-colors ${
             activeTab === 'invoices'
               ? 'border-indigo-600 text-indigo-600 font-bold'
               : 'border-transparent hover:text-slate-900'
@@ -740,15 +991,30 @@ export const BillingPage: React.FC = () => {
         </button>
 
         <button
+          onClick={() => setActiveTab('payments')}
+          className={`pb-3 px-1 border-b-2 flex items-center gap-2 shrink-0 transition-colors ${
+            activeTab === 'payments'
+              ? 'border-indigo-600 text-indigo-600 font-bold'
+              : 'border-transparent hover:text-slate-900'
+          }`}
+        >
+          <CreditCard className="w-4 h-4" />
+          <span>Payments & Reconciliation</span>
+          <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-mono">
+            {visiblePayments.length}
+          </span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('recurring')}
-          className={`pb-3 px-1 border-b-2 flex items-center gap-2 transition-colors ${
+          className={`pb-3 px-1 border-b-2 flex items-center gap-2 shrink-0 transition-colors ${
             activeTab === 'recurring'
               ? 'border-indigo-600 text-indigo-600 font-bold'
               : 'border-transparent hover:text-slate-900'
           }`}
         >
           <Calendar className="w-4 h-4" />
-          <span>Recurring Billing Monitor</span>
+          <span>Recurring Schedule</span>
           <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-mono">
             {visibleSubscriptions.length}
           </span>
@@ -756,15 +1022,32 @@ export const BillingPage: React.FC = () => {
 
         {!isCustomer && (
           <button
+            onClick={() => setActiveTab('discounts')}
+            className={`pb-3 px-1 border-b-2 flex items-center gap-2 shrink-0 transition-colors ${
+              activeTab === 'discounts'
+                ? 'border-indigo-600 text-indigo-600 font-bold'
+                : 'border-transparent hover:text-slate-900'
+            }`}
+          >
+            <Tag className="w-4 h-4" />
+            <span>Discount Rules</span>
+            <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-mono">
+              {discounts.length}
+            </span>
+          </button>
+        )}
+
+        {!isCustomer && (
+          <button
             onClick={() => setActiveTab('taxes')}
-            className={`pb-3 px-1 border-b-2 flex items-center gap-2 transition-colors ${
+            className={`pb-3 px-1 border-b-2 flex items-center gap-2 shrink-0 transition-colors ${
               activeTab === 'taxes'
                 ? 'border-indigo-600 text-indigo-600 font-bold'
                 : 'border-transparent hover:text-slate-900'
             }`}
           >
             <Percent className="w-4 h-4" />
-            <span>Tax Rules Configuration</span>
+            <span>Tax Engine</span>
             <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-mono">
               {taxRates.length}
             </span>
@@ -775,30 +1058,48 @@ export const BillingPage: React.FC = () => {
       {/* TAB 1: INVOICES LEDGER */}
       {activeTab === 'invoices' && (
         <div className="space-y-4">
-          {/* Controls: Search & Status Filters */}
-          <div className="flex flex-col sm:flex-row gap-3 justify-between items-stretch sm:items-center">
-            <div className="relative w-full sm:w-80">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <Input
-                value={searchQuery}
+          {/* Controls: Search, Due Date & Status Filters */}
+          <div className="flex flex-col lg:flex-row gap-3 justify-between items-stretch lg:items-center">
+            <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
+              <div className="relative w-full sm:w-72">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  placeholder="Search invoice #, client, sub..."
+                  className="pl-9 text-xs"
+                />
+              </div>
+
+              {/* Due Date Filter */}
+              <select
+                value={dueDateFilter}
                 onChange={(e) => {
-                  setSearchQuery(e.target.value);
+                  setDueDateFilter(e.target.value);
                   setCurrentPage(1);
                 }}
-                placeholder="Search invoice #, client, subscription..."
-                className="pl-9 text-xs"
-              />
+                className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="all">All Due Dates</option>
+                <option value="next7">Due within 7 Days</option>
+                <option value="next30">Due within 30 Days</option>
+                <option value="overdue">Overdue Invoices Only</option>
+              </select>
             </div>
 
-            {/* Filter Pills */}
+            {/* Status Filter Pills */}
             <div className="flex items-center gap-1.5 flex-wrap">
               {[
-                { key: 'all', label: 'All Invoices' },
+                { key: 'all', label: 'All' },
                 { key: 'draft', label: 'Draft' },
-                { key: 'posted', label: 'Confirmed / Posted' },
+                { key: 'posted', label: 'Posted / Unpaid' },
+                { key: 'partial', label: 'Partially Paid' },
                 { key: 'paid', label: 'Paid' },
                 { key: 'overdue', label: 'Overdue' },
-                { key: 'void', label: 'Void / Cancelled' },
+                { key: 'void', label: 'Void' },
               ].map((filter) => (
                 <button
                   key={filter.key}
@@ -839,7 +1140,6 @@ export const BillingPage: React.FC = () => {
                     </Button>
                   ) : undefined
                 }
-
               />
             ) : (
               <div className="overflow-x-auto">
@@ -867,6 +1167,7 @@ export const BillingPage: React.FC = () => {
                         inv.status === 'posted' &&
                         new Date(inv.due_date).getTime() < Date.now() &&
                         bal > 0;
+                      const isPartiallyPaid = paid > 0 && bal > 0;
 
                       return (
                         <tr
@@ -928,6 +1229,8 @@ export const BillingPage: React.FC = () => {
                               <Badge variant="rose" label="OVERDUE" />
                             ) : inv.status === 'paid' ? (
                               <Badge variant="emerald" label="PAID" />
+                            ) : isPartiallyPaid ? (
+                              <Badge variant="blue" label="PARTIAL" />
                             ) : inv.status === 'posted' ? (
                               <Badge variant="blue" label="POSTED" />
                             ) : inv.status === 'void' ? (
@@ -938,6 +1241,18 @@ export const BillingPage: React.FC = () => {
                           </td>
                           <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1.5">
+                              {canManageBilling && inv.status !== 'void' && bal > 0 && (
+                                <button
+                                  onClick={() => {
+                                    setInvoiceToPay(inv);
+                                    setIsPaymentFormOpen(true);
+                                  }}
+                                  className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition"
+                                  title="Record Payment"
+                                >
+                                  <DollarSign className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                               <button
                                 onClick={() => setSelectedInvoiceForDetail(inv)}
                                 className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition"
@@ -1000,10 +1315,178 @@ export const BillingPage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 2: RECURRING BILLING MONITOR */}
+      {/* TAB 2: PAYMENTS & RECONCILIATION (TASK 3) */}
+      {activeTab === 'payments' && (
+        <div className="space-y-4">
+          {/* Controls: Search, Method & Status Filters */}
+          <div className="flex flex-col sm:flex-row gap-3 justify-between items-stretch sm:items-center">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Input
+                value={paymentSearch}
+                onChange={(e) => setPaymentSearch(e.target.value)}
+                placeholder="Search reference, invoice #, client..."
+                className="pl-9 text-xs"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={paymentMethodFilter}
+                onChange={(e) => setPaymentMethodFilter(e.target.value)}
+                className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="all">All Payment Methods</option>
+                <option value="bank_transfer">Direct Bank / ACH</option>
+                <option value="credit_card">Card Reference</option>
+                <option value="manual">Manual Settlement</option>
+              </select>
+
+              <select
+                value={paymentStatusFilter}
+                onChange={(e) => setPaymentStatusFilter(e.target.value)}
+                className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="all">All Payment Statuses</option>
+                <option value="succeeded">Settled / Succeeded</option>
+                <option value="refunded">Refunded</option>
+                <option value="pending">Pending</option>
+                <option value="failed">Failed</option>
+              </select>
+
+              {canManageBilling && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    setInvoiceToPay(null);
+                    setIsPaymentFormOpen(true);
+                  }}
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Record Settlement
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Payments Table */}
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+            {isLoading ? (
+              <div className="p-6">
+                <TableSkeleton rows={4} cols={7} />
+              </div>
+            ) : filteredPayments.length === 0 ? (
+              <EmptyState
+                title="No payment transactions found"
+                description={
+                  paymentSearch
+                    ? `No payments match query "${paymentSearch}".`
+                    : 'No payment reconciliation records available for the selected filters.'
+                }
+                action={
+                  canManageBilling ? (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setInvoiceToPay(null);
+                        setIsPaymentFormOpen(true);
+                      }}
+                    >
+                      <Plus className="w-3.5 h-3.5 mr-1" /> Record Payment
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200/80">
+                    <tr>
+                      <th className="py-3 px-4">Transaction Ref</th>
+                      <th className="py-3 px-4">Associated Invoice</th>
+                      <th className="py-3 px-4">Customer Account</th>
+                      <th className="py-3 px-4">Payment Method</th>
+                      <th className="py-3 px-4">Settlement Date</th>
+                      <th className="py-3 px-4 text-right">Amount Settled</th>
+                      <th className="py-3 px-4 text-center">Status</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredPayments.map((p) => (
+                      <tr
+                        key={p.id}
+                        className="hover:bg-slate-50/60 transition-colors group cursor-pointer"
+                        onClick={() => setSelectedPaymentForDetail(p)}
+                      >
+                        <td className="py-3.5 px-4 font-mono font-bold text-slate-900 group-hover:text-indigo-600 transition-colors flex items-center gap-1.5">
+                          <Hash className="w-3 h-3 text-slate-400" />
+                          {p.transaction_reference || `TXN-${p.id}`}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono font-semibold text-indigo-600">
+                          {p.invoice_number || `INV-${p.invoice_id}`}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-semibold text-slate-900">{p.customer_name}</div>
+                          <div className="text-[11px] text-slate-500 font-mono">
+                            {p.customer_email}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 capitalize text-slate-700">
+                          {p.payment_method.replace('_', ' ')}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600">
+                          {new Date(p.paid_at || p.created_at).toLocaleDateString()}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-600">
+                          ${num(p.amount).toFixed(2)} {p.currency || 'USD'}
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <Badge
+                            variant={
+                              p.status === 'succeeded'
+                                ? 'emerald'
+                                : p.status === 'refunded'
+                                ? 'rose'
+                                : 'amber'
+                            }
+                            label={p.status.toUpperCase()}
+                          />
+                        </td>
+                        <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => setSelectedPaymentForDetail(p)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition"
+                              title="View Receipt"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                            {canManageBilling && p.status === 'succeeded' && (
+                              <button
+                                onClick={() => setSelectedPaymentForDetail(p)}
+                                className="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition"
+                                title="Refund Payment"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: RECURRING BILLING MONITOR */}
       {activeTab === 'recurring' && (
         <div className="space-y-4">
-          {/* Header Controls for Recurring Schedule */}
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
               <h3 className="text-sm font-bold text-slate-900">
@@ -1035,7 +1518,6 @@ export const BillingPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Subscriptions Recurring Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {visibleSubscriptions.map((sub) => {
               const isApproaching = sub.status === 'active' && sub.next_billing_date !== 'Paused';
@@ -1105,7 +1587,6 @@ export const BillingPage: React.FC = () => {
             })}
           </div>
 
-          {/* Architecture Explanation Callout */}
           <div className="p-5 bg-slate-50/70 rounded-3xl border border-slate-200/80 text-xs text-slate-600 space-y-2">
             <div className="flex items-center gap-2 font-bold text-slate-800">
               <Layers className="w-4 h-4 text-indigo-600" />
@@ -1118,7 +1599,121 @@ export const BillingPage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 3: TAX RULES CONFIGURATION (ADMIN / FINANCE ONLY) */}
+      {/* TAB 4: DISCOUNT RULES MANAGEMENT (TASK 1) */}
+      {activeTab === 'discounts' && !isCustomer && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">
+                Promotional Vouchers & Discount Rules
+              </h3>
+              <p className="text-xs text-slate-500">
+                Configure percentage and fixed deduction coupons, assign redemption limits, and monitor campaign usage.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative w-full sm:w-60">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={discountSearch}
+                  onChange={(e) => setDiscountSearch(e.target.value)}
+                  placeholder="Search voucher code..."
+                  className="pl-9 text-xs"
+                />
+              </div>
+
+              {isAdmin && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    setDiscountToEdit(null);
+                    setIsDiscountModalOpen(true);
+                  }}
+                  className="shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Create Discount
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Discount Rules Grid / Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredDiscounts.map((disc) => {
+              const isExpired =
+                disc.valid_until && new Date(disc.valid_until).getTime() < Date.now();
+              const isExhausted =
+                disc.max_uses !== undefined &&
+                disc.usage_count !== undefined &&
+                disc.usage_count >= disc.max_uses;
+
+              return (
+                <div
+                  key={disc.id}
+                  className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-xs space-y-4 hover:border-indigo-300 transition-colors cursor-pointer group"
+                  onClick={() => setSelectedDiscountForDetail(disc)}
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="font-mono text-xs font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-xl border border-indigo-100 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                        {disc.code}
+                      </span>
+                      <h4 className="font-bold text-slate-900 text-sm mt-2">{disc.name || 'Promo'}</h4>
+                    </div>
+
+                    {isExpired ? (
+                      <Badge variant="rose" label="EXPIRED" />
+                    ) : isExhausted ? (
+                      <Badge variant="amber" label="EXHAUSTED" />
+                    ) : disc.is_active ? (
+                      <Badge variant="emerald" label="ACTIVE" />
+                    ) : (
+                      <Badge variant="slate" label="INACTIVE" />
+                    )}
+                  </div>
+
+                  <div className="p-3 rounded-2xl bg-slate-50/80 border border-slate-200/60 space-y-1.5 text-xs">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Discount Benefit:</span>
+                      <span className="font-bold font-mono text-slate-900">
+                        {disc.discount_type === 'percentage'
+                          ? `${num(disc.amount)}% OFF`
+                          : `$${num(disc.amount).toFixed(2)} OFF`}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between text-slate-600">
+                      <span>Min Purchase Spend:</span>
+                      <span className="font-mono text-slate-800">
+                        {disc.min_purchase_amount ? `$${num(disc.min_purchase_amount).toFixed(2)}` : 'None'}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between text-slate-600">
+                      <span>Redemption Usage:</span>
+                      <span className="font-mono font-medium text-indigo-600">
+                        {disc.usage_count || 0} / {disc.max_uses ? `${disc.max_uses} max` : 'Unlimited'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+                    <span className="capitalize">Scope: {disc.applies_to || 'All Items'}</span>
+                    <span className="text-indigo-600 font-semibold group-hover:underline flex items-center gap-1">
+                      View Rule &rarr;
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: TAX RULES CONFIGURATION */}
       {activeTab === 'taxes' && !isCustomer && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
@@ -1197,6 +1792,7 @@ export const BillingPage: React.FC = () => {
         }}
         availableSubscriptions={subscriptions}
         availableTaxes={taxRates}
+        availableDiscounts={discounts}
       />
 
       {/* Invoice Detail Modal */}
@@ -1204,9 +1800,71 @@ export const BillingPage: React.FC = () => {
         isOpen={Boolean(selectedInvoiceForDetail)}
         onClose={() => setSelectedInvoiceForDetail(null)}
         invoice={selectedInvoiceForDetail}
+        payments={payments}
         onStatusChange={(updated) => {
           setInvoices((prev) => prev.map((inv) => (inv.id === updated.id ? updated : inv)));
           setSelectedInvoiceForDetail(updated);
+        }}
+        onPaymentRecorded={(newPay, updatedInv) => {
+          setPayments((prev) => [newPay, ...prev]);
+          setInvoices((prev) => prev.map((inv) => (inv.id === updatedInv.id ? updatedInv : inv)));
+          setSelectedInvoiceForDetail(updatedInv);
+        }}
+      />
+
+      {/* Payment Recording Form Modal */}
+      <PaymentFormModal
+        isOpen={isPaymentFormOpen}
+        onClose={() => setIsPaymentFormOpen(false)}
+        preselectedInvoice={invoiceToPay}
+        availableInvoices={visibleInvoices}
+        onSuccess={(newPay, updatedInv) => {
+          setPayments((prev) => [newPay, ...prev]);
+          if (updatedInv) {
+            setInvoices((prev) => prev.map((inv) => (inv.id === updatedInv.id ? updatedInv : inv)));
+          }
+        }}
+      />
+
+      {/* Payment Receipt / Detail Modal */}
+      <PaymentDetailModal
+        isOpen={Boolean(selectedPaymentForDetail)}
+        onClose={() => setSelectedPaymentForDetail(null)}
+        payment={selectedPaymentForDetail}
+        onRefundSuccess={(refunded) => {
+          setPayments((prev) => prev.map((p) => (p.id === refunded.id ? refunded : p)));
+          setSelectedPaymentForDetail(refunded);
+        }}
+      />
+
+      {/* Discount Form Modal */}
+      <DiscountFormModal
+        isOpen={isDiscountModalOpen}
+        onClose={() => setIsDiscountModalOpen(false)}
+        discountToEdit={discountToEdit}
+        onSuccess={(saved) => {
+          setDiscounts((prev) => {
+            const exists = prev.some((d) => d.id === saved.id);
+            if (exists) {
+              return prev.map((d) => (d.id === saved.id ? saved : d));
+            }
+            return [saved, ...prev];
+          });
+        }}
+      />
+
+      {/* Discount Detail Modal */}
+      <DiscountDetailModal
+        isOpen={Boolean(selectedDiscountForDetail)}
+        onClose={() => setSelectedDiscountForDetail(null)}
+        discount={selectedDiscountForDetail}
+        onEdit={(disc) => {
+          setDiscountToEdit(disc);
+          setIsDiscountModalOpen(true);
+        }}
+        onToggleActive={(updated) => {
+          setDiscounts((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+          setSelectedDiscountForDetail(updated);
         }}
       />
 
