@@ -12,6 +12,10 @@ from app.schemas.auth import (
     TokenResponse,
     UserProfileResponse,
     UserUpdateRequest,
+    StaffCreateRequest,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    ResetPasswordRequest,
 )
 from app.schemas.catalog import (
     ProductCreateRequest,
@@ -62,6 +66,10 @@ __all__ = [
     "TokenResponse",
     "UserProfileResponse",
     "UserUpdateRequest",
+    "StaffCreateRequest",
+    "ForgotPasswordRequest",
+    "ForgotPasswordResponse",
+    "ResetPasswordRequest",
     "ProductCreateRequest",
     "ProductUpdateRequest",
     "ProductResponse",
@@ -91,4 +99,3 @@ __all__ = [
     "RevenueReportResponse",
     "SubscriptionReportResponse",
 ]
-

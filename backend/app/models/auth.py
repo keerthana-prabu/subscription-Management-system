@@ -4,8 +4,9 @@ Owner: Member 2 (Authentication & Catalog Backend)
 """
 
 import enum
-from typing import List, TYPE_CHECKING
-from sqlalchemy import String, Boolean, Enum
+from datetime import datetime, timezone
+from typing import List, Optional, TYPE_CHECKING
+from sqlalchemy import String, Boolean, Enum, ForeignKey, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
@@ -52,7 +53,36 @@ class User(Base, TimestampMixin):
         "QuotationTemplate",
         back_populates="created_by",
     )
+    reset_tokens: Mapped[List["PasswordResetToken"]] = relationship(
+        "PasswordResetToken",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email} role={self.role}>"
 
+
+class PasswordResetToken(Base):
+    """Password reset token entity with hashed token storage and single-use tracking."""
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    token_hash: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="reset_tokens")
+
+    def __repr__(self) -> str:
+        return f"<PasswordResetToken id={self.id} user_id={self.user_id} used={self.used_at is not None}>"

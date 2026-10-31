@@ -1,7 +1,7 @@
 """Export all database models and declarative base for Alembic migrations and application runtime."""
 
 from app.models.base import Base, TimestampMixin
-from app.models.auth import User, UserRole
+from app.models.auth import User, UserRole, PasswordResetToken
 from app.models.catalog import Product, ProductVariant, QuotationTemplate
 from app.models.subscription import (
     SubscriptionPlan,
@@ -25,6 +25,7 @@ __all__ = [
     "TimestampMixin",
     "User",
     "UserRole",
+    "PasswordResetToken",
     "Product",
     "ProductVariant",
     "QuotationTemplate",
@@ -43,4 +44,3 @@ __all__ = [
     "PaymentStatus",
     "PaymentMethod",
 ]
-
