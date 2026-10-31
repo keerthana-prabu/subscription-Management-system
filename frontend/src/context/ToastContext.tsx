@@ -43,24 +43,28 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <ToastContext.Provider value={{ showToast, removeToast }}>
       {children}
       {/* Toast viewport */}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col space-y-2 max-w-sm w-full pointer-events-none px-4 sm:px-0">
+      <div className="fixed bottom-5 right-5 z-50 flex flex-col space-y-2.5 max-w-sm w-full pointer-events-none px-4 sm:px-0">
         {toasts.map((toast) => {
           const typeConfig = {
             success: {
-              border: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-              icon: <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />,
+              border: 'border-l-4 border-l-emerald-500 border-slate-200/90',
+              iconBg: 'bg-emerald-50 text-emerald-600',
+              icon: <CheckCircle2 className="w-4.5 h-4.5" />,
             },
             error: {
-              border: 'border-rose-200 bg-rose-50 text-rose-800',
-              icon: <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />,
+              border: 'border-l-4 border-l-rose-500 border-slate-200/90',
+              iconBg: 'bg-rose-50 text-rose-600',
+              icon: <AlertCircle className="w-4.5 h-4.5" />,
             },
             warning: {
-              border: 'border-amber-200 bg-amber-50 text-amber-800',
-              icon: <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />,
+              border: 'border-l-4 border-l-amber-500 border-slate-200/90',
+              iconBg: 'bg-amber-50 text-amber-600',
+              icon: <AlertTriangle className="w-4.5 h-4.5" />,
             },
             info: {
-              border: 'border-indigo-200 bg-indigo-50 text-indigo-800',
-              icon: <Info className="w-4 h-4 text-indigo-600 shrink-0" />,
+              border: 'border-l-4 border-l-indigo-600 border-slate-200/90',
+              iconBg: 'bg-indigo-50 text-indigo-600',
+              icon: <Info className="w-4.5 h-4.5" />,
             },
           }[toast.type];
 
@@ -68,19 +72,21 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             <div
               key={toast.id}
               role="alert"
-              className={`pointer-events-auto p-3.5 rounded-xl border shadow-lg flex items-start space-x-2.5 transition-all animate-in slide-in-from-bottom-2 duration-200 text-left ${typeConfig.border}`}
+              className={`pointer-events-auto p-4 rounded-xl bg-white border shadow-xl flex items-start space-x-3 transition-all animate-in slide-in-from-bottom-3 duration-200 text-left ${typeConfig.border}`}
             >
-              <div className="mt-0.5">{typeConfig.icon}</div>
-              <div className="flex-1">
-                {toast.title && <div className="text-xs font-bold leading-tight mb-0.5">{toast.title}</div>}
-                <div className="text-xs leading-relaxed">{toast.message}</div>
+              <div className={`p-1.5 rounded-lg shrink-0 mt-0.5 ${typeConfig.iconBg}`}>
+                {typeConfig.icon}
+              </div>
+              <div className="flex-1 min-w-0">
+                {toast.title && <div className="text-xs font-bold text-slate-900 leading-tight mb-0.5">{toast.title}</div>}
+                <div className="text-xs text-slate-600 leading-relaxed break-words">{toast.message}</div>
               </div>
               <button
                 onClick={() => removeToast(toast.id)}
-                className="text-slate-400 hover:text-slate-600 p-0.5 rounded transition-colors"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors shrink-0"
                 aria-label="Close notification"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
           );
@@ -97,4 +103,3 @@ export const useToast = (): ToastContextType => {
   }
   return context;
 };
-

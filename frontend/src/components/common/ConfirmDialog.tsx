@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, HelpCircle } from 'lucide-react';
 import { Modal } from './Modal';
 import { Button } from './Button';
 
@@ -28,17 +28,23 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 }) => {
   return (
     <Modal isOpen={isOpen} onClose={onCancel} title={title} maxWidth="sm">
-      <div className="space-y-4 text-left">
-        <div className="flex items-start space-x-3 text-slate-600 text-xs leading-relaxed">
-          {isDestructive && (
-            <div className="p-2 rounded-full bg-rose-50 text-rose-600 shrink-0">
-              <AlertTriangle className="w-5 h-5" />
-            </div>
-          )}
-          <p className="mt-1">{message}</p>
+      <div className="space-y-5 text-left">
+        <div className="flex items-start space-x-3.5">
+          <div
+            className={`p-2.5 rounded-xl shrink-0 ${
+              isDestructive
+                ? 'bg-rose-50 text-rose-600 border border-rose-100'
+                : 'bg-indigo-50 text-indigo-600 border border-indigo-100'
+            }`}
+          >
+            {isDestructive ? <AlertTriangle className="w-5 h-5" /> : <HelpCircle className="w-5 h-5" />}
+          </div>
+          <div className="text-xs text-slate-600 leading-relaxed pt-1">
+            <p>{message}</p>
+          </div>
         </div>
 
-        <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
+        <div className="flex items-center justify-end space-x-2.5 pt-4 border-t border-slate-100">
           <Button variant="outline" size="sm" onClick={onCancel} disabled={isLoading}>
             {cancelLabel}
           </Button>
@@ -55,4 +61,3 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     </Modal>
   );
 };
-

@@ -8,6 +8,7 @@ import type {
   PlanBillingInterval,
   BillingCycle,
 } from '../../api/types';
+import { DollarSign, Calendar, Shield } from 'lucide-react';
 
 interface PlanFormModalProps {
   isOpen: boolean;
@@ -118,8 +119,8 @@ export const PlanFormModal: React.FC<PlanFormModalProps> = ({
       base_price: Number(price),
       min_quantity: Number(minQuantity),
       billing_interval: billingInterval,
-      billing_cycle: mapBillingCycle(billingInterval),
       billing_interval_count: Number(billingIntervalCount),
+      billing_cycle: mapBillingCycle(billingInterval),
       trial_period_days: Number(trialPeriodDays),
       start_date: startDate || undefined,
       end_date: endDate || undefined,
@@ -129,6 +130,7 @@ export const PlanFormModal: React.FC<PlanFormModalProps> = ({
       pause_allowed: pauseAllowed,
       auto_renew: autoRenew,
       is_active: isActive,
+      currency: 'USD',
     });
   };
 
@@ -136,15 +138,16 @@ export const PlanFormModal: React.FC<PlanFormModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={planToEdit ? `Edit Subscription Plan: ${planToEdit.name}` : 'Create Subscription Plan'}
-      description="Configure recurring cadence, pricing policies, and lifecycle management rules."
+      title={planToEdit ? `Edit Plan: ${planToEdit.name}` : 'Configure New Subscription Plan'}
+      description="Define recurring billing cadences, trial periods, and automated lifecycle governance."
       maxWidth="lg"
     >
-      <form onSubmit={handleSubmit} className="space-y-4 text-left">
+      <form onSubmit={handleSubmit} className="space-y-5 text-left">
+        {/* Basic Identification */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Input
-            label="Plan Name"
-            placeholder="e.g. Growth Enterprise Plan"
+            label="Subscription Plan Name"
+            placeholder="e.g. Enterprise Growth Tier"
             value={name}
             onChange={(e) => setName(e.target.value)}
             error={errors.name}
@@ -152,7 +155,7 @@ export const PlanFormModal: React.FC<PlanFormModalProps> = ({
           />
 
           <Input
-            label="Plan Code"
+            label="Plan Identifier Code"
             placeholder="e.g. PLAN-GROWTH-M"
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
@@ -161,80 +164,87 @@ export const PlanFormModal: React.FC<PlanFormModalProps> = ({
           />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Input
-            label="Recurring Base Price ($ USD)"
-            type="number"
-            step="0.01"
-            min="0"
-            value={price}
-            onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
-            error={errors.price}
-            required
-          />
+        {/* Cadence & Pricing Section */}
+        <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-3.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <DollarSign className="w-3.5 h-3.5 text-indigo-600" />
+              Recurring Pricing & Billing Cadence
+            </span>
+            <span className="text-[10px] text-slate-400 font-mono">USD ($)</span>
+          </div>
 
-          <Input
-            label="Minimum Quantity"
-            type="number"
-            min="1"
-            value={minQuantity}
-            onChange={(e) => setMinQuantity(parseInt(e.target.value, 10) || 1)}
-            error={errors.minQuantity}
-            required
-          />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            <Input
+              label="Recurring Price ($)"
+              type="number"
+              step="0.01"
+              min="0"
+              value={price}
+              onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
+              error={errors.price}
+              required
+            />
 
-          <Input
-            label="Trial Period (Days)"
-            type="number"
-            min="0"
-            value={trialPeriodDays}
-            onChange={(e) => setTrialPeriodDays(parseInt(e.target.value, 10) || 0)}
-          />
-        </div>
-
-        {/* Billing Cadence Configuration */}
-        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-          <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
-            Billing Interval & Recurrence
-          </span>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Billing Frequency
+                Billing Interval <span className="text-rose-500">*</span>
               </label>
               <select
                 value={billingInterval}
                 onChange={(e) => setBillingInterval(e.target.value as PlanBillingInterval)}
-                className="block w-full rounded-lg border border-slate-300 py-2 px-3 text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-600"
+                className="block w-full rounded-xl border border-slate-300 py-2.5 px-3 text-sm text-slate-900 bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all shadow-2xs"
               >
                 <option value="daily">Daily</option>
                 <option value="weekly">Weekly</option>
                 <option value="monthly">Monthly</option>
-                <option value="yearly">Yearly</option>
+                <option value="yearly">Yearly / Annual</option>
               </select>
             </div>
 
             <Input
-              label="Every N Intervals (Interval Count)"
+              label="Interval Multiplier"
               type="number"
               min="1"
               value={billingIntervalCount}
               onChange={(e) => setBillingIntervalCount(parseInt(e.target.value, 10) || 1)}
               error={errors.intervalCount}
-              helperText={`e.g. Every ${billingIntervalCount} ${billingInterval}(s)`}
+              helperText="e.g. 1 = every month, 3 = quarterly"
               required
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+            <Input
+              label="Minimum Required Quantity"
+              type="number"
+              min="1"
+              value={minQuantity}
+              onChange={(e) => setMinQuantity(parseInt(e.target.value, 10) || 1)}
+              error={errors.minQuantity}
+              helperText="Minimum seat or license commitment"
+              required
+            />
+
+            <Input
+              label="Free Trial Window (Days)"
+              type="number"
+              min="0"
+              value={trialPeriodDays}
+              onChange={(e) => setTrialPeriodDays(parseInt(e.target.value, 10) || 0)}
+              helperText="Set 0 for immediate payment upon activation"
             />
           </div>
         </div>
 
-        {/* Plan Availability Dates */}
+        {/* Schedule Windows */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Input
             label="Availability Start Date"
             type="date"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
-            helperText="Optional release date"
+            leftIcon={<Calendar className="w-4 h-4" />}
           />
 
           <Input
@@ -243,92 +253,105 @@ export const PlanFormModal: React.FC<PlanFormModalProps> = ({
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
             error={errors.endDate}
-            helperText="Optional sunset / promo end date"
+            leftIcon={<Calendar className="w-4 h-4" />}
           />
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-            Plan Description & Terms
-          </label>
-          <textarea
-            rows={2}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Plan terms, included features, and subscription entitlements..."
-            className="block w-full rounded-lg border border-slate-300 py-2 px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-600"
-          />
-        </div>
+        {/* Lifecycle Policies Toggles */}
+        <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <Shield className="w-3.5 h-3.5 text-indigo-600" />
+              Automated Lifecycle Governance Policies
+            </span>
+            <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+              Contract Rules
+            </span>
+          </div>
 
-        {/* Lifecycle Policies Checkboxes */}
-        <div className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-2 text-xs">
-          <span className="font-bold text-slate-800 block">Subscription Lifecycle Rules:</span>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-700">
-            <label className="flex items-center space-x-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={autoClose}
-                onChange={(e) => setAutoClose(e.target.checked)}
-                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-              />
-              <span>Auto-close upon unpaid invoice grace period</span>
-            </label>
-
-            <label className="flex items-center space-x-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={earlyCloseAllowed}
-                onChange={(e) => setEarlyCloseAllowed(e.target.checked)}
-                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-              />
-              <span>Allow customer early contract termination</span>
-            </label>
-
-            <label className="flex items-center space-x-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={pauseAllowed}
-                onChange={(e) => setPauseAllowed(e.target.checked)}
-                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-              />
-              <span>Allow pausing active subscription cycle</span>
-            </label>
-
-            <label className="flex items-center space-x-2 cursor-pointer select-none">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            {/* Toggle 1 */}
+            <label className="flex items-start space-x-3 p-3 bg-white rounded-xl border border-slate-200 cursor-pointer hover:border-slate-300 transition-colors">
               <input
                 type="checkbox"
                 checked={autoRenew}
                 onChange={(e) => setAutoRenew(e.target.checked)}
-                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
               />
-              <span>Automatic renewal at period end</span>
+              <div className="text-xs">
+                <span className="font-bold text-slate-800 block">Auto-Renew Subscription</span>
+                <span className="text-slate-500 text-[11px]">Generate recurring invoice at end of term</span>
+              </div>
+            </label>
+
+            {/* Toggle 2 */}
+            <label className="flex items-start space-x-3 p-3 bg-white rounded-xl border border-slate-200 cursor-pointer hover:border-slate-300 transition-colors">
+              <input
+                type="checkbox"
+                checked={autoClose}
+                onChange={(e) => setAutoClose(e.target.checked)}
+                className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <div className="text-xs">
+                <span className="font-bold text-slate-800 block">Auto-Close on Default</span>
+                <span className="text-slate-500 text-[11px]">Terminate subscription after failed payment retries</span>
+              </div>
+            </label>
+
+            {/* Toggle 3 */}
+            <label className="flex items-start space-x-3 p-3 bg-white rounded-xl border border-slate-200 cursor-pointer hover:border-slate-300 transition-colors">
+              <input
+                type="checkbox"
+                checked={pauseAllowed}
+                onChange={(e) => setPauseAllowed(e.target.checked)}
+                className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <div className="text-xs">
+                <span className="font-bold text-slate-800 block">Allow Pause & Resume</span>
+                <span className="text-slate-500 text-[11px]">Customers can suspend billing temporarily</span>
+              </div>
+            </label>
+
+            {/* Toggle 4 */}
+            <label className="flex items-start space-x-3 p-3 bg-white rounded-xl border border-slate-200 cursor-pointer hover:border-slate-300 transition-colors">
+              <input
+                type="checkbox"
+                checked={earlyCloseAllowed}
+                onChange={(e) => setEarlyCloseAllowed(e.target.checked)}
+                className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <div className="text-xs">
+                <span className="font-bold text-slate-800 block">Early Termination Allowed</span>
+                <span className="text-slate-500 text-[11px]">Permit cancellation before term expiration</span>
+              </div>
             </label>
           </div>
         </div>
 
-        <div className="flex items-center space-x-2 pt-1">
-          <input
-            type="checkbox"
-            id="plan_active"
-            checked={isActive}
-            onChange={(e) => setIsActive(e.target.checked)}
-            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
-          />
-          <label htmlFor="plan_active" className="text-xs font-medium text-slate-700 select-none cursor-pointer">
-            Plan published and available for subscription orders
+        {/* Description Field */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold text-slate-700">
+            Plan Description & Terms <span className="text-slate-400 font-normal">(Optional)</span>
           </label>
+          <textarea
+            rows={2}
+            placeholder="Detail entitlements, SLA tiers, or overage billing clauses..."
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="block w-full rounded-xl border border-slate-300 p-3 text-sm text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all shadow-2xs"
+          />
         </div>
 
-        <div className="flex items-center justify-end space-x-2 pt-4 border-t border-slate-100">
-          <Button variant="outline" size="sm" type="button" onClick={onClose} disabled={isLoading}>
+        {/* Footer actions */}
+        <div className="flex items-center justify-end space-x-2.5 pt-4 border-t border-slate-100">
+          <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={isLoading}>
             Cancel
           </Button>
-          <Button variant="primary" size="sm" type="submit" isLoading={isLoading}>
-            {planToEdit ? 'Save Changes' : 'Create Plan'}
+          <Button type="submit" variant="primary" size="sm" isLoading={isLoading}>
+            {planToEdit ? 'Save Plan Changes' : 'Create Subscription Plan'}
           </Button>
         </div>
       </form>
     </Modal>
   );
 };
-

@@ -11,7 +11,7 @@ import { BillingPage } from './pages/BillingPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { api } from './api/client';
 import type { HealthResponse } from './api/types';
-import { ShieldAlert, ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Lock } from 'lucide-react';
 import { Button } from './components/common/Button';
 
 function MainLayout() {
@@ -55,7 +55,7 @@ function MainLayout() {
   })();
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800">
+    <div className="min-h-screen bg-slate-50/70 flex flex-col font-sans text-slate-800 antialiased selection:bg-indigo-500/10 selection:text-indigo-900">
       <Navbar
         healthStatus={healthStatus}
         backendVersion={health?.version}
@@ -74,27 +74,29 @@ function MainLayout() {
           onCloseMobile={() => setIsMobileMenuOpen(false)}
         />
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto min-w-0">
           {!isAllowed ? (
-            <div className="max-w-lg mx-auto my-12 bg-white p-8 rounded-2xl border border-slate-200 shadow-sm text-center">
-              <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4">
-                <ShieldAlert className="w-6 h-6" />
+            <div className="max-w-lg mx-auto my-14 bg-white p-8 sm:p-9 rounded-3xl border border-slate-200/80 shadow-md text-center space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center mx-auto shadow-2xs">
+                <Lock className="w-6 h-6" />
               </div>
-              <h3 className="text-base font-bold text-slate-900 mb-1">Access Restricted</h3>
-              <p className="text-xs text-slate-600 mb-4 leading-relaxed">
-                {user ? (
-                  <>
-                    The <span className="font-semibold">{currentNavConfig?.label}</span> module requires{' '}
-                    <span className="font-semibold text-indigo-700">
-                      {currentNavConfig?.allowedRoles.join(' or ').toUpperCase()}
-                    </span>{' '}
-                    privileges. Your account is configured as <span className="font-semibold capitalize">{user.role}</span>.
-                  </>
-                ) : (
-                  'You must sign in to an authenticated account to access this subscription module.'
-                )}
-              </p>
-              <div className="flex items-center justify-center space-x-3">
+              <div className="space-y-1">
+                <h3 className="text-lg font-black text-slate-900 tracking-tight">Access Privilege Required</h3>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+                  {user ? (
+                    <>
+                      The <span className="font-bold text-slate-800">{currentNavConfig?.label}</span> module requires{' '}
+                      <span className="font-bold text-indigo-700">
+                        {currentNavConfig?.allowedRoles.join(' or ').toUpperCase()}
+                      </span>{' '}
+                      privileges. Your account is currently authenticated as <span className="font-bold capitalize">{user.role}</span>.
+                    </>
+                  ) : (
+                    'You must sign in with an authenticated account having sufficient privileges to access this subscription module.'
+                  )}
+                </p>
+              </div>
+              <div className="pt-2 flex items-center justify-center gap-2.5">
                 <Button
                   size="sm"
                   variant="outline"
@@ -105,7 +107,7 @@ function MainLayout() {
                 </Button>
                 {!user && (
                   <Button size="sm" variant="primary" onClick={() => setCurrentTab('auth')}>
-                    Sign In
+                    Sign In to Continue
                   </Button>
                 )}
               </div>
