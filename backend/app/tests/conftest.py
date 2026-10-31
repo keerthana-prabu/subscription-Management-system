@@ -43,6 +43,7 @@ def create_user_helper(db_session: Session):
         role: UserRole = UserRole.CUSTOMER,
         is_active: bool = True,
     ) -> User:
+        db_session.rollback()
         # Check if already exists from prior run
         existing = db_session.query(User).filter(User.email == email.lower()).first()
         if existing:
@@ -67,12 +68,16 @@ def create_user_helper(db_session: Session):
     yield _create_user
 
     # Cleanup created users after test
-    for uid in created_users:
-        u = db_session.query(User).filter(User.id == uid).first()
-        if u:
-            db_session.query(PasswordResetToken).filter(PasswordResetToken.user_id == u.id).delete()
-            db_session.delete(u)
-    db_session.commit()
+    try:
+        db_session.rollback()
+        for uid in created_users:
+            u = db_session.query(User).filter(User.id == uid).first()
+            if u:
+                db_session.query(PasswordResetToken).filter(PasswordResetToken.user_id == u.id).delete()
+                db_session.delete(u)
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
 
 
 @pytest.fixture

@@ -13,15 +13,18 @@ from app.models.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.auth import User
-    from app.models.catalog import ProductVariant
+    from app.models.catalog import ProductVariant, QuotationTemplate
     from app.models.billing import Invoice
 
 
 class BillingCycle(str, enum.Enum):
     """Supported recurring billing frequencies."""
+    DAILY = "daily"
+    WEEKLY = "weekly"
     MONTHLY = "monthly"
-    QUARTERLY = "quarterly"
-    ANNUAL = "annual"
+    YEARLY = "yearly"
+    QUARTERLY = "quarterly"  # legacy support
+    ANNUAL = "annual"        # legacy support
 
 
 class SubscriptionStatus(str, enum.Enum):
@@ -42,7 +45,12 @@ class SubscriptionPlan(Base, TimestampMixin):
     code: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     billing_cycle: Mapped[BillingCycle] = mapped_column(
-        Enum(BillingCycle, name="billing_cycle_enum", native_enum=False),
+        Enum(
+            BillingCycle,
+            name="billing_cycle_enum",
+            native_enum=False,
+            values_callable=lambda x: [item.value for item in x],
+        ),
         default=BillingCycle.MONTHLY,
         nullable=False,
     )
@@ -50,11 +58,22 @@ class SubscriptionPlan(Base, TimestampMixin):
     base_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
     trial_period_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    minimum_quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    start_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    end_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    auto_close: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    allow_early_close: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    allow_pause: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    allow_renewal: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
 
     # Relationships
     subscriptions: Mapped[List["Subscription"]] = relationship(
         "Subscription",
+        back_populates="plan",
+    )
+    quotation_templates: Mapped[List["QuotationTemplate"]] = relationship(
+        "QuotationTemplate",
         back_populates="plan",
     )
 
@@ -78,7 +97,12 @@ class Subscription(Base, TimestampMixin):
         index=True,
     )
     status: Mapped[SubscriptionStatus] = mapped_column(
-        Enum(SubscriptionStatus, name="subscription_status_enum", native_enum=False),
+        Enum(
+            SubscriptionStatus,
+            name="subscription_status_enum",
+            native_enum=False,
+            values_callable=lambda x: [item.value for item in x],
+        ),
         default=SubscriptionStatus.DRAFT,
         nullable=False,
         index=True,
@@ -132,4 +156,3 @@ class SubscriptionItem(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<SubscriptionItem id={self.id} subscription_id={self.subscription_id} variant_id={self.variant_id}>"
-

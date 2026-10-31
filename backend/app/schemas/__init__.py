@@ -27,9 +27,12 @@ from app.schemas.catalog import (
     QuotationTemplateCreateRequest,
     QuotationTemplateUpdateRequest,
     QuotationTemplateResponse,
+    QuotationTemplateItemInput,
+    QuotationTemplateItemResponse,
 )
 from app.schemas.subscription import (
     SubscriptionPlanCreateRequest,
+    SubscriptionPlanUpdateRequest,
     SubscriptionPlanResponse,
     SubscriptionCreateRequest,
     SubscriptionStatusChangeRequest,
@@ -79,7 +82,10 @@ __all__ = [
     "QuotationTemplateCreateRequest",
     "QuotationTemplateUpdateRequest",
     "QuotationTemplateResponse",
+    "QuotationTemplateItemInput",
+    "QuotationTemplateItemResponse",
     "SubscriptionPlanCreateRequest",
+    "SubscriptionPlanUpdateRequest",
     "SubscriptionPlanResponse",
     "SubscriptionCreateRequest",
     "SubscriptionStatusChangeRequest",

@@ -2,7 +2,7 @@
 
 from app.models.base import Base, TimestampMixin
 from app.models.auth import User, UserRole, PasswordResetToken
-from app.models.catalog import Product, ProductVariant, QuotationTemplate
+from app.models.catalog import Product, ProductVariant, QuotationTemplate, QuotationTemplateItem
 from app.models.subscription import (
     SubscriptionPlan,
     Subscription,
@@ -29,6 +29,7 @@ __all__ = [
     "Product",
     "ProductVariant",
     "QuotationTemplate",
+    "QuotationTemplateItem",
     "SubscriptionPlan",
     "Subscription",
     "SubscriptionItem",
